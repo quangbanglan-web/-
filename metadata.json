@@ -1,0 +1,6 @@
+{
+  "name": "Интерактивная математическая доска в клетку",
+  "description": "Бесконечная тетрадная доска для планшетов и онлайн-уроков с мгновенным форматированием рукописных формул и цифр в LaTeX.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
