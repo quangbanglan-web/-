@@ -7,6 +7,7 @@ import {
   Check,
   Code2,
   Compass,
+  Crown,
   FilePlus2,
   Landmark,
   LogOut,
@@ -14,10 +15,12 @@ import {
   Pencil,
   Plus,
   Shapes,
+  Shield,
   Sparkles,
   Trash2,
   User as UserIcon,
   X,
+  Zap,
 } from 'lucide-react';
 import { User } from '../types/auth';
 
@@ -48,6 +51,8 @@ interface DashboardProps {
   onDeleteBoard: (id: string) => Promise<void>;
   onAddSubject: (label: string) => void;
   onLogout?: () => void;
+  onOpenSubscription?: () => void;
+  onOpenAdmin?: () => void;
 }
 
 const subjectIcons = [Calculator, Atom, Code2, Map, Landmark, Compass, Shapes];
@@ -98,6 +103,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onDeleteBoard,
   onAddSubject,
   onLogout,
+  onOpenSubscription,
+  onOpenAdmin,
 }) => {
   const [newSubjectName, setNewSubjectName] = useState('');
   const [subjectError, setSubjectError] = useState('');
@@ -144,7 +151,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   return (
     <main className="fixed inset-0 z-50 overflow-y-auto bg-[#f2f6f3] text-slate-900">
       <div className="pointer-events-none fixed inset-0 opacity-40 [background-image:linear-gradient(rgba(16,94,76,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(16,94,76,0.045)_1px,transparent_1px)] [background-size:28px_28px]" />
-      <div className="relative mx-auto min-h-full max-w-7xl px-5 py-6 md:px-9 md:py-9">
+      <div className="relative mx-auto min-h-full max-w-7xl px-5 py-6 pb-24 md:px-9 md:py-9 md:pb-28">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-emerald-950/10 pb-5">
           <div className="flex items-center gap-3">
             <span className="grid h-10 w-10 place-items-center rounded-lg bg-emerald-800 text-white shadow-sm">
@@ -157,13 +164,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           {currentUser ? (
-            <div className="flex items-center gap-3 sm:gap-4">
+            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+              {/* Buy PRO Header Button (hidden if already PRO) */}
+              {onOpenSubscription && !currentUser.is_pro && (
+                <button
+                  type="button"
+                  onClick={onOpenSubscription}
+                  title="Оформить PRO подписку без рекламы"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 px-3 py-2 text-xs font-black text-slate-950 shadow-sm transition hover:brightness-105 active:scale-95"
+                >
+                  <Crown className="h-3.5 w-3.5 fill-slate-950 text-slate-950" />
+                  <span className="hidden sm:inline">Купить PRO — 99 ₽</span>
+                  <span className="sm:hidden">PRO — 99 ₽</span>
+                </button>
+              )}
+
               <div className="flex items-center gap-2.5 rounded-lg border border-emerald-950/10 bg-white/70 px-3 py-1.5 shadow-sm">
                 <span className="grid h-8 w-8 place-items-center rounded-full bg-emerald-800 text-xs font-bold text-white shadow-xs">
                   {currentUser.name ? currentUser.name[0].toUpperCase() : <UserIcon className="h-4 w-4" />}
                 </span>
                 <div className="flex flex-col">
-                  <span className="max-w-44 truncate text-xs font-bold text-slate-900 sm:max-w-64" title={currentUser.name}>
+                  <span className="max-w-36 truncate text-xs font-bold text-slate-900 sm:max-w-64" title={currentUser.name}>
                     {currentUser.name}
                   </span>
                   <span className="text-[10px] text-slate-500">{currentUser.email}</span>
@@ -171,21 +192,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                 {currentUser.is_pro ? (
                   <span
-                    title="PRO подписка активна"
+                    title="PRO подписка активна: без рекламы и пауз"
                     className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 px-2 py-0.5 text-[10px] font-black text-amber-950 shadow-xs"
                   >
                     <Sparkles className="h-2.5 w-2.5" />
                     PRO
                   </span>
                 ) : (
-                  <span
-                    title="Базовый тариф FREE"
-                    className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700"
+                  <button
+                    type="button"
+                    onClick={onOpenSubscription}
+                    title="Тариф FREE. Нажмите, чтобы отключить рекламу и получить PRO"
+                    className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700 transition hover:bg-amber-100 hover:text-amber-900"
                   >
                     FREE
-                  </span>
+                  </button>
                 )}
               </div>
+
+              {/* Admin Panel Button (only if user.role === 'admin') */}
+              {currentUser.role === 'admin' && onOpenAdmin && (
+                <button
+                  type="button"
+                  onClick={onOpenAdmin}
+                  title="Панель администратора"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-xs font-bold text-purple-900 shadow-sm transition hover:border-purple-300 hover:bg-purple-100 active:scale-95"
+                >
+                  <Shield className="h-3.5 w-3.5 text-purple-700" />
+                  <span>Админка</span>
+                </button>
+              )}
 
               {onLogout && (
                 <button

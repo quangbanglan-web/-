@@ -32,8 +32,13 @@ import { GraphPlotModal } from './components/GraphPlotModal';
 import { SettingsModal } from './components/SettingsModal';
 import { ToolbarCustomizerModal } from './components/ToolbarCustomizerModal';
 import { AuthModal } from './components/AuthModal';
+import { BottomBannerAd } from './components/ads/BottomBannerAd';
+import { InterstitialAdModal } from './components/ads/InterstitialAdModal';
+import { SubscriptionModal } from './components/SubscriptionModal';
+import { AdminPanel } from './components/AdminPanel';
 import { User } from './types/auth';
 import { authFetch, fetchCurrentUser, getStoredToken, removeStoredToken } from './utils/auth';
+import { confirmSandboxPayment } from './utils/payment';
 import { X, LoaderCircle } from 'lucide-react';
 
 const ALGEBRA_STORAGE_KEY = 'mathboard_algebra_pages_v3';
@@ -122,6 +127,13 @@ export default function App() {
   const saveBoardRef = useRef<() => Promise<boolean>>(async () => false);
   const [boardMessage, setBoardMessage] = useState('');
 
+  // Ads & Subscription States
+  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+  const [isBottomBannerVisible, setIsBottomBannerVisible] = useState(false);
+  const [pendingBoardIdToOpen, setPendingBoardIdToOpen] = useState<string | null>(null);
+  const [isInterstitialOpen, setIsInterstitialOpen] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+
   const handleLogout = useCallback(() => {
     removeStoredToken();
     setCurrentUser(null);
@@ -129,6 +141,8 @@ export default function App() {
     setActiveBoard(null);
     setActiveView('dashboard');
     setBoardUrl(null);
+    setIsInterstitialOpen(false);
+    setPendingBoardIdToOpen(null);
   }, []);
 
   // Check auth session on launch
@@ -155,6 +169,35 @@ export default function App() {
       isActive = false;
     };
   }, []);
+
+  // Handle return from YooKassa / sandbox payment
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const mockPaymentId = urlParams.get('mock_payment_id');
+    const paymentStatus = urlParams.get('payment');
+
+    if (mockPaymentId || paymentStatus === 'success') {
+      const finishPayment = async () => {
+        if (mockPaymentId) {
+          await confirmSandboxPayment(mockPaymentId, currentUser?.id);
+        }
+
+        const updated = await fetchCurrentUser();
+        if (updated) {
+          setCurrentUser(updated);
+        }
+
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('mock_payment_id');
+        cleanUrl.searchParams.delete('payment');
+        window.history.replaceState({}, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+
+        setBoardMessage('Подписка DOSKA PRO успешно оформлена! Доступ ко всем возможностям открыт.');
+      };
+
+      finishPayment();
+    }
+  }, [currentUser?.id]);
 
   // Algebra Pages
   const [algebraPages, setAlgebraPages] = useState<PageData[]>(() => {
@@ -266,6 +309,15 @@ export default function App() {
       y: typeof window !== 'undefined' ? Math.max(40, window.innerHeight - 80) : 500,
     };
   });
+
+  const effectiveToolbarPos = useMemo(() => {
+    if (!isBottomBannerVisible) return toolbarPos;
+    const maxAllowedY = typeof window !== 'undefined' ? Math.max(40, window.innerHeight - 138) : toolbarPos.y;
+    if (toolbarPos.y > maxAllowedY) {
+      return { x: toolbarPos.x, y: maxAllowedY };
+    }
+    return toolbarPos;
+  }, [toolbarPos, isBottomBannerVisible]);
 
   const [toolbarCustomization, setToolbarCustomization] = useState<ToolbarCustomization>(() => {
     try {
@@ -1020,6 +1072,31 @@ export default function App() {
     }
   };
 
+  const handleRequestOpenBoard = (id: string) => {
+    if (currentUser?.is_pro) {
+      void handleLoadBoard(id);
+    } else {
+      setPendingBoardIdToOpen(id);
+      setIsInterstitialOpen(true);
+    }
+  };
+
+  const handleProceedFromInterstitial = () => {
+    setIsInterstitialOpen(false);
+    if (pendingBoardIdToOpen) {
+      const targetId = pendingBoardIdToOpen;
+      setPendingBoardIdToOpen(null);
+      void handleLoadBoard(targetId);
+    }
+  };
+
+  const handleSuccessUpgrade = (updatedUser: User) => {
+    setCurrentUser(updatedUser);
+    setIsSubscriptionModalOpen(false);
+    setIsInterstitialOpen(false);
+    setBoardMessage('Поздравляем! Подписка DOSKA PRO активирована. Вся реклама отключена!');
+  };
+
   const handleCreateBoard = (subjectId = selectedSubjectId) => {
     const mode: SubjectMode = subjectId === 'geometry' ? 'geometry' : 'algebra';
     const subjectLabel = labelForSubject(subjectId);
@@ -1181,11 +1258,13 @@ export default function App() {
           currentUser={currentUser}
           onSelectSubject={setSelectedSubjectId}
           onCreateBoard={() => handleCreateBoard(selectedSubjectId)}
-          onOpenBoard={handleLoadBoard}
+          onOpenBoard={handleRequestOpenBoard}
           onRenameBoard={handleRenameSavedBoard}
           onDeleteBoard={handleDeleteSavedBoard}
           onAddSubject={handleAddSubject}
           onLogout={handleLogout}
+          onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
+          onOpenAdmin={() => setIsAdminPanelOpen(true)}
         />
       ))}
 
@@ -1298,8 +1377,15 @@ export default function App() {
         onOpenGraphPlotter={() => setIsGraphPlotOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenToolbarCustomizer={() => setIsToolbarCustomizerOpen(true)}
-        position={toolbarPos}
-        onChangePosition={setToolbarPos}
+        position={effectiveToolbarPos}
+        onChangePosition={(pos) => {
+          if (isBottomBannerVisible) {
+            const maxAllowedY = typeof window !== 'undefined' ? Math.max(40, window.innerHeight - 138) : pos.y;
+            setToolbarPos({ x: pos.x, y: Math.min(pos.y, maxAllowedY) });
+          } else {
+            setToolbarPos(pos);
+          }
+        }}
       />
 
       {/* 6. Modals */}
@@ -1344,12 +1430,41 @@ export default function App() {
         onResetToolbarPos={() =>
           setToolbarPos({
             x: Math.max(20, window.innerWidth / 2 - 240),
-            y: Math.max(40, window.innerHeight - 80),
+            y: Math.max(40, window.innerHeight - (isBottomBannerVisible ? 140 : 80)),
           })
         }
       />
         </>
       )}
+
+      {/* 7. Ads and Subscription Modals */}
+      <BottomBannerAd
+        isPro={Boolean(currentUser?.is_pro)}
+        onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
+        onVisibilityChange={setIsBottomBannerVisible}
+      />
+
+      <InterstitialAdModal
+        isOpen={isInterstitialOpen}
+        isPro={Boolean(currentUser?.is_pro)}
+        boardTitle={boards.find((b) => b.id === pendingBoardIdToOpen)?.title || 'Урок'}
+        onProceed={handleProceedFromInterstitial}
+        onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
+      />
+
+      <SubscriptionModal
+        isOpen={isSubscriptionModalOpen}
+        onClose={() => setIsSubscriptionModalOpen(false)}
+        currentUser={currentUser}
+        onSuccessUpgrade={handleSuccessUpgrade}
+      />
+
+      <AdminPanel
+        isOpen={isAdminPanelOpen}
+        onClose={() => setIsAdminPanelOpen(false)}
+        currentUser={currentUser}
+        onCurrentUserUpdated={(updated) => setCurrentUser(updated)}
+      />
     </div>
   );
 }

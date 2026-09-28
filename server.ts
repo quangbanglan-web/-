@@ -18,6 +18,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'doska-super-secret-jwt-commercial-key-2026';
+const YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID || '';
+const YOOKASSA_SECRET_KEY = process.env.YOOKASSA_SECRET_KEY || '';
+const APP_URL = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 
 app.use(express.json({ limit: '25mb' }));
 app.use(cors());
@@ -57,6 +60,34 @@ database.exec(`
     id TEXT PRIMARY KEY,
     applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS ad_impressions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    ad_type TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS subscriptions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    payment_method_id TEXT,
+    status TEXT DEFAULT 'active',
+    next_billing_date DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS payments (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 99,
+    status TEXT NOT NULL,
+    is_recurrent INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
 `);
 
 // Safe migration for boards table columns
@@ -77,9 +108,16 @@ if (existingUsersCount === 0) {
   const hash = bcrypt.hashSync('teacher123', salt);
   database.prepare(`
     INSERT INTO users (id, email, password_hash, name, role, is_pro, pro_expires_at)
-    VALUES (?, ?, ?, ?, 'user', 1, NULL)
+    VALUES (?, ?, ?, ?, 'admin', 1, NULL)
   `).run(defaultTeacherId, 'teacher@doska.ru', hash, 'Преподаватель');
 }
+
+// Ensure teacher@doska.ru or first registered user has 'admin' role
+database.prepare(`
+  UPDATE users SET role = 'admin'
+  WHERE email = 'teacher@doska.ru'
+     OR id = (SELECT id FROM users ORDER BY created_at ASC LIMIT 1)
+`).run();
 
 // Ensure all existing unassigned boards belong to a valid user
 const fallbackUser = database.prepare('SELECT id FROM users ORDER BY created_at ASC LIMIT 1').get() as { id: string } | undefined;
@@ -193,6 +231,13 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
   } catch {
     return res.status(401).json({ error: 'Недействительный или истекший токен авторизации' });
   }
+};
+
+export const adminMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Доступ запрещен: требуются права администратора' });
+  }
+  next();
 };
 
 // ----------------- Auth API -----------------
@@ -353,6 +398,395 @@ app.get('/api/auth/me', authMiddleware, (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error('Error in /api/auth/me:', error);
     return res.status(500).json({ error: 'Ошибка получения профиля' });
+  }
+});
+
+// POST /api/auth/upgrade-pro — Активация PRO подписки
+app.post('/api/auth/upgrade-pro', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    database.prepare('UPDATE users SET is_pro = 1, pro_expires_at = ? WHERE id = ?')
+      .run(expiresAt, userId);
+
+    const user = database.prepare(`
+      SELECT id, email, name, role, is_pro, pro_expires_at, created_at
+      FROM users WHERE id = ?
+    `).get(userId) as any;
+
+    return res.json({
+      ok: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        is_pro: Boolean(user.is_pro),
+        pro_expires_at: user.pro_expires_at,
+        created_at: user.created_at,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error upgrading to PRO:', error);
+    return res.status(500).json({ error: 'Ошибка активации подписки' });
+  }
+});
+
+// ----------------- Ads API -----------------
+
+// POST /api/ads/impression — Логирование показов рекламы
+app.post('/api/ads/impression', (req: Request, res: Response) => {
+  try {
+    const { ad_type } = req.body ?? {};
+    if (typeof ad_type !== 'string' || !ad_type.trim()) {
+      return res.status(400).json({ error: 'Поле ad_type обязательно' });
+    }
+
+    // Извлечение user_id из заголовка Authorization, если авторизован
+    let userId: string | null = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7).trim();
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET) as AuthenticatedUser;
+        userId = decoded.id;
+      } catch {
+        // Невалидный или истекший токен - логируем с userId = null
+      }
+    }
+
+    const impressionId = randomUUID();
+    database.prepare(`
+      INSERT INTO ad_impressions (id, user_id, ad_type, created_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(impressionId, userId, ad_type.trim());
+
+    return res.status(201).json({ ok: true, id: impressionId });
+  } catch (error: any) {
+    console.error('Error logging ad impression:', error);
+    return res.status(500).json({ error: 'Внутренняя ошибка сервера при сохранении показа рекламы' });
+  }
+});
+
+// ----------------- Payments & Subscriptions (YooKassa) -----------------
+
+// POST /api/payments/create-subscription — Инициализация рекуррентной подписки 99 ₽/мес
+app.post('/api/payments/create-subscription', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const idempotenceKey = randomUUID();
+
+    // Если заданы рабочие ключи ЮKassa
+    if (YOOKASSA_SHOP_ID && YOOKASSA_SECRET_KEY && YOOKASSA_SHOP_ID !== 'test_shop_id') {
+      try {
+        const basicAuth = Buffer.from(`${YOOKASSA_SHOP_ID}:${YOOKASSA_SECRET_KEY}`).toString('base64');
+        const yooResponse = await fetch('https://api.yookassa.ru/v3/payments', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotence-Key': idempotenceKey,
+            'Authorization': `Basic ${basicAuth}`,
+          },
+          body: JSON.stringify({
+            amount: { value: '99.00', currency: 'RUB' },
+            capture: true,
+            save_payment_method: true,
+            confirmation: {
+              type: 'redirect',
+              return_url: `${APP_URL}/?payment=success`,
+            },
+            description: 'Автоподписка DOSKA PRO — 99 ₽/мес',
+            metadata: { user_id: userId },
+          }),
+        });
+
+        const yooData = (await yooResponse.json()) as any;
+        if (yooResponse.ok && yooData?.confirmation?.confirmation_url) {
+          database.prepare(`
+            INSERT INTO payments (id, user_id, amount, status, is_recurrent)
+            VALUES (?, ?, 99, 'pending', 0)
+            ON CONFLICT(id) DO UPDATE SET status = 'pending'
+          `).run(yooData.id, userId);
+
+          return res.json({
+            confirmation_url: yooData.confirmation.confirmation_url,
+            payment_id: yooData.id,
+          });
+        }
+        console.warn('YooKassa live response error, activating sandbox fallback:', yooData);
+      } catch (yooErr) {
+        console.warn('YooKassa request error, activating sandbox fallback:', yooErr);
+      }
+    }
+
+    // Режим песочницы / Sandbox эмуляции при тестировании
+    const mockPaymentId = 'pay_' + randomUUID();
+    database.prepare(`
+      INSERT INTO payments (id, user_id, amount, status, is_recurrent)
+      VALUES (?, ?, 99, 'pending', 0)
+    `).run(mockPaymentId, userId);
+
+    const confirmationUrl = `${APP_URL}/?mock_payment_id=${mockPaymentId}`;
+    return res.json({
+      confirmation_url: confirmationUrl,
+      payment_id: mockPaymentId,
+      is_sandbox: true,
+    });
+  } catch (error: any) {
+    console.error('Error creating subscription payment:', error);
+    return res.status(500).json({ error: 'Ошибка создания платежа в платежной системе' });
+  }
+});
+
+// POST /api/payments/webhook — Вебхук от ЮKassa (или симулятора оплаты)
+app.post('/api/payments/webhook', (req: Request, res: Response) => {
+  try {
+    const event = req.body?.event;
+    const paymentObj = req.body?.object;
+
+    if (event === 'payment.succeeded' && paymentObj) {
+      const paymentId = paymentObj.id || randomUUID();
+      const userId = paymentObj.metadata?.user_id;
+      const paymentMethodId = paymentObj.payment_method?.id || ('pm_' + randomUUID());
+      const isSaved = paymentObj.payment_method?.saved !== false;
+
+      if (userId) {
+        database.prepare(`
+          INSERT INTO payments (id, user_id, amount, status, is_recurrent)
+          VALUES (?, ?, 99, 'succeeded', 0)
+          ON CONFLICT(id) DO UPDATE SET status = 'succeeded'
+        `).run(paymentId, userId);
+
+        // Обновляем пользователя: is_pro = 1, pro_expires_at = +30 дней
+        database.prepare(`
+          UPDATE users 
+          SET is_pro = 1, pro_expires_at = datetime('now', '+30 days')
+          WHERE id = ?
+        `).run(userId);
+
+        // Сохраняем подписку
+        const subId = 'sub_' + randomUUID();
+        database.prepare(`
+          INSERT INTO subscriptions (id, user_id, payment_method_id, status, next_billing_date)
+          VALUES (?, ?, ?, 'active', datetime('now', '+30 days'))
+        `).run(subId, userId, isSaved ? paymentMethodId : null);
+      }
+    }
+
+    return res.json({ ok: true });
+  } catch (error: any) {
+    console.error('Error processing webhook:', error);
+    return res.status(500).json({ error: 'Ошибка обработки вебхука' });
+  }
+});
+
+// POST /api/subscriptions/cancel — Отмена автопродления пользователем
+app.post('/api/subscriptions/cancel', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const result = database.prepare("UPDATE subscriptions SET status = 'canceled' WHERE user_id = ? AND status = 'active'").run(userId);
+    return res.json({ ok: true, canceledCount: result.changes });
+  } catch (error: any) {
+    console.error('Error canceling subscription:', error);
+    return res.status(500).json({ error: 'Ошибка отмены подписки' });
+  }
+});
+
+// GET /api/subscriptions/my — Текущая подписка пользователя
+app.get('/api/subscriptions/my', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const sub = database.prepare(`
+      SELECT id, status, next_billing_date, payment_method_id, created_at
+      FROM subscriptions
+      WHERE user_id = ? AND status = 'active'
+      ORDER BY created_at DESC LIMIT 1
+    `).get(userId) as any;
+
+    return res.json({ subscription: sub || null });
+  } catch (error: any) {
+    console.error('Error fetching subscription:', error);
+    return res.status(500).json({ error: 'Ошибка получения подписки' });
+  }
+});
+
+// Фоновая задача рекуррентного списания
+const processRecurringSubscriptions = async () => {
+  try {
+    const dueSubscriptions = database.prepare(`
+      SELECT s.id as sub_id, s.user_id, s.payment_method_id, u.email
+      FROM subscriptions s
+      JOIN users u ON s.user_id = u.id
+      WHERE s.status = 'active'
+        AND s.payment_method_id IS NOT NULL
+        AND s.next_billing_date <= datetime('now')
+    `).all() as Array<{ sub_id: string; user_id: string; payment_method_id: string; email: string }>;
+
+    for (const sub of dueSubscriptions) {
+      const recurrentPaymentId = 'rec_' + randomUUID();
+      let succeeded = true;
+
+      if (YOOKASSA_SHOP_ID && YOOKASSA_SECRET_KEY && YOOKASSA_SHOP_ID !== 'test_shop_id') {
+        try {
+          const basicAuth = Buffer.from(`${YOOKASSA_SHOP_ID}:${YOOKASSA_SECRET_KEY}`).toString('base64');
+          const resp = await fetch('https://api.yookassa.ru/v3/payments', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotence-Key': randomUUID(),
+              'Authorization': `Basic ${basicAuth}`,
+            },
+            body: JSON.stringify({
+              amount: { value: '99.00', currency: 'RUB' },
+              capture: true,
+              payment_method_id: sub.payment_method_id,
+              description: 'Автопродление DOSKA PRO — 99 ₽/мес',
+              metadata: { user_id: sub.user_id, is_recurrent: '1' },
+            }),
+          });
+          const data = (await resp.json()) as any;
+          succeeded = resp.ok && (data.status === 'succeeded' || data.status === 'waiting_for_capture');
+        } catch {
+          succeeded = false;
+        }
+      }
+
+      if (succeeded) {
+        database.prepare(`
+          INSERT INTO payments (id, user_id, amount, status, is_recurrent)
+          VALUES (?, ?, 99, 'succeeded', 1)
+        `).run(recurrentPaymentId, sub.user_id);
+
+        database.prepare(`
+          UPDATE users
+          SET is_pro = 1, pro_expires_at = datetime('now', '+30 days')
+          WHERE id = ?
+        `).run(sub.user_id);
+
+        database.prepare(`
+          UPDATE subscriptions
+          SET next_billing_date = datetime('now', '+30 days'), status = 'active'
+          WHERE id = ?
+        `).run(sub.sub_id);
+      } else {
+        database.prepare("UPDATE subscriptions SET status = 'past_due' WHERE id = ?").run(sub.sub_id);
+      }
+    }
+  } catch (err) {
+    console.error('Error processing recurring payments:', err);
+  }
+};
+
+app.post('/api/payments/process-recurring', authMiddleware, adminMiddleware, async (_req: AuthRequest, res: Response) => {
+  await processRecurringSubscriptions();
+  return res.json({ ok: true });
+});
+
+// Рекуррентная проверка каждые 6 часов
+setInterval(processRecurringSubscriptions, 6 * 60 * 60 * 1000);
+
+// ----------------- Admin API (Protected) -----------------
+
+// GET /api/admin/stats — Общая сводка для владельца
+app.get('/api/admin/stats', authMiddleware, adminMiddleware, (_req: AuthRequest, res: Response) => {
+  try {
+    const totalUsers = (database.prepare('SELECT count(*) as count FROM users').get() as any).count;
+    const proUsers = (database.prepare('SELECT count(*) as count FROM users WHERE is_pro = 1').get() as any).count;
+    const totalBoards = (database.prepare('SELECT count(*) as count FROM boards').get() as any).count;
+    const totalAdImpressions = (database.prepare('SELECT count(*) as count FROM ad_impressions').get() as any).count;
+    const bannerImpressions = (database.prepare("SELECT count(*) as count FROM ad_impressions WHERE ad_type = 'banner_bottom'").get() as any).count;
+    const interstitialImpressions = (database.prepare("SELECT count(*) as count FROM ad_impressions WHERE ad_type = 'interstitial_board_open'").get() as any).count;
+    const totalRevenue = (database.prepare("SELECT coalesce(sum(amount), 0) as total FROM payments WHERE status = 'succeeded'").get() as any).total;
+    const activeSubscriptions = (database.prepare("SELECT count(*) as count FROM subscriptions WHERE status = 'active'").get() as any).count;
+
+    return res.json({
+      totalUsers,
+      proUsers,
+      totalBoards,
+      totalRevenue,
+      activeSubscriptions,
+      ads: {
+        total: totalAdImpressions,
+        bannerBottom: bannerImpressions,
+        interstitial: interstitialImpressions,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching admin stats:', error);
+    return res.status(500).json({ error: 'Ошибка получения статистики' });
+  }
+});
+
+// GET /api/admin/users — Список пользователей для админки
+app.get('/api/admin/users', authMiddleware, adminMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+    const filter = search ? `%${search}%` : '';
+
+    const users = database.prepare(`
+      SELECT 
+        u.id, u.email, u.name, u.role, u.is_pro, u.pro_expires_at, u.created_at,
+        (SELECT count(*) FROM boards b WHERE b.user_id = u.id) as boards_count,
+        (SELECT count(*) FROM ad_impressions a WHERE a.user_id = u.id) as ad_impressions_count,
+        (SELECT s.status FROM subscriptions s WHERE s.user_id = u.id ORDER BY s.created_at DESC LIMIT 1) as subscription_status
+      FROM users u
+      WHERE (? = '' OR LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ?)
+      ORDER BY u.created_at DESC
+    `).all(filter, filter, filter);
+
+    return res.json({ users });
+  } catch (error: any) {
+    console.error('Error fetching admin users:', error);
+    return res.status(500).json({ error: 'Ошибка получения списка пользователей' });
+  }
+});
+
+// POST /api/admin/users/:id/grant-pro — Выдача PRO блогерам/учителям
+app.post('/api/admin/users/:id/grant-pro', authMiddleware, adminMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const targetUserId = req.params.id;
+    const { duration = '1_month' } = req.body ?? {};
+
+    let proExpiresAt: string;
+    if (duration === '1_year') {
+      proExpiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+    } else if (duration === 'forever') {
+      proExpiresAt = '2099-12-31T23:59:59.000Z';
+    } else {
+      proExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    const result = database.prepare('UPDATE users SET is_pro = 1, pro_expires_at = ? WHERE id = ?')
+      .run(proExpiresAt, targetUserId);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+
+    const updatedUser = database.prepare('SELECT id, email, name, role, is_pro, pro_expires_at FROM users WHERE id = ?').get(targetUserId);
+    return res.json({ ok: true, user: updatedUser });
+  } catch (error: any) {
+    console.error('Error granting PRO:', error);
+    return res.status(500).json({ error: 'Ошибка выдачи PRO статуса' });
+  }
+});
+
+// POST /api/admin/users/:id/revoke-pro — Снятие PRO статуса
+app.post('/api/admin/users/:id/revoke-pro', authMiddleware, adminMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const targetUserId = req.params.id;
+    const result = database.prepare('UPDATE users SET is_pro = 0, pro_expires_at = NULL WHERE id = ?')
+      .run(targetUserId);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+
+    database.prepare("UPDATE subscriptions SET status = 'canceled' WHERE user_id = ?").run(targetUserId);
+    return res.json({ ok: true });
+  } catch (error: any) {
+    console.error('Error revoking PRO:', error);
+    return res.status(500).json({ error: 'Ошибка отзыва PRO статуса' });
   }
 });
 
