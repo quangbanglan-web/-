@@ -36,6 +36,9 @@ import { BottomBannerAd } from './components/ads/BottomBannerAd';
 import { InterstitialAdModal } from './components/ads/InterstitialAdModal';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { AdminPanel } from './components/AdminPanel';
+import { TermsModal } from './components/legal/TermsModal';
+import { PrivacyModal } from './components/legal/PrivacyModal';
+import { ContactsModal } from './components/legal/ContactsModal';
 import { User } from './types/auth';
 import { authFetch, fetchCurrentUser, getStoredToken, removeStoredToken } from './utils/auth';
 import { confirmSandboxPayment } from './utils/payment';
@@ -133,6 +136,9 @@ export default function App() {
   const [pendingBoardIdToOpen, setPendingBoardIdToOpen] = useState<string | null>(null);
   const [isInterstitialOpen, setIsInterstitialOpen] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+  const [isContactsModalOpen, setIsContactsModalOpen] = useState(false);
 
   const handleLogout = useCallback(() => {
     removeStoredToken();
@@ -1233,7 +1239,19 @@ export default function App() {
   }
 
   if (!currentUser) {
-    return <AuthModal onSuccess={(user) => setCurrentUser(user)} />;
+    return (
+      <>
+        <AuthModal
+          onSuccess={(user) => setCurrentUser(user)}
+          onOpenTerms={() => setIsTermsModalOpen(true)}
+          onOpenPrivacy={() => setIsPrivacyModalOpen(true)}
+          onOpenContacts={() => setIsContactsModalOpen(true)}
+        />
+        <TermsModal isOpen={isTermsModalOpen} onClose={() => setIsTermsModalOpen(false)} />
+        <PrivacyModal isOpen={isPrivacyModalOpen} onClose={() => setIsPrivacyModalOpen(false)} />
+        <ContactsModal isOpen={isContactsModalOpen} onClose={() => setIsContactsModalOpen(false)} />
+      </>
+    );
   }
 
   return (
@@ -1265,6 +1283,9 @@ export default function App() {
           onLogout={handleLogout}
           onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
           onOpenAdmin={() => setIsAdminPanelOpen(true)}
+          onOpenTerms={() => setIsTermsModalOpen(true)}
+          onOpenPrivacy={() => setIsPrivacyModalOpen(true)}
+          onOpenContacts={() => setIsContactsModalOpen(true)}
         />
       ))}
 
@@ -1457,6 +1478,7 @@ export default function App() {
         onClose={() => setIsSubscriptionModalOpen(false)}
         currentUser={currentUser}
         onSuccessUpgrade={handleSuccessUpgrade}
+        onOpenTerms={() => setIsTermsModalOpen(true)}
       />
 
       <AdminPanel
@@ -1464,6 +1486,22 @@ export default function App() {
         onClose={() => setIsAdminPanelOpen(false)}
         currentUser={currentUser}
         onCurrentUserUpdated={(updated) => setCurrentUser(updated)}
+      />
+
+      {/* Legal Modals */}
+      <TermsModal
+        isOpen={isTermsModalOpen}
+        onClose={() => setIsTermsModalOpen(false)}
+      />
+
+      <PrivacyModal
+        isOpen={isPrivacyModalOpen}
+        onClose={() => setIsPrivacyModalOpen(false)}
+      />
+
+      <ContactsModal
+        isOpen={isContactsModalOpen}
+        onClose={() => setIsContactsModalOpen(false)}
       />
     </div>
   );

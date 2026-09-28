@@ -23,6 +23,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { User } from '../types/auth';
+import { Footer } from './Footer';
 
 export interface DashboardSubject {
   id: string;
@@ -53,6 +54,9 @@ interface DashboardProps {
   onLogout?: () => void;
   onOpenSubscription?: () => void;
   onOpenAdmin?: () => void;
+  onOpenTerms?: () => void;
+  onOpenPrivacy?: () => void;
+  onOpenContacts?: () => void;
 }
 
 const subjectIcons = [Calculator, Atom, Code2, Map, Landmark, Compass, Shapes];
@@ -105,6 +109,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onLogout,
   onOpenSubscription,
   onOpenAdmin,
+  onOpenTerms,
+  onOpenPrivacy,
+  onOpenContacts,
 }) => {
   const [newSubjectName, setNewSubjectName] = useState('');
   const [subjectError, setSubjectError] = useState('');
@@ -356,6 +363,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
             )}
           </section>
         </div>
+
+        {/* Footer with legal requisites, payment logos and links */}
+        {onOpenTerms && onOpenPrivacy && onOpenContacts && (
+          <Footer
+            onOpenTerms={onOpenTerms}
+            onOpenPrivacy={onOpenPrivacy}
+            onOpenContacts={onOpenContacts}
+            className="mt-12 rounded-2xl border border-emerald-950/10 shadow-xs"
+          />
+        )}
       </div>
 
       {renamingBoard && (

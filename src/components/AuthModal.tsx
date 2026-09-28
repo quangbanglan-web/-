@@ -13,12 +13,21 @@ import {
 } from 'lucide-react';
 import { loginUser, registerUser } from '../utils/auth';
 import { User } from '../types/auth';
+import { Footer } from './Footer';
 
 interface AuthModalProps {
   onSuccess: (user: User) => void;
+  onOpenTerms?: () => void;
+  onOpenPrivacy?: () => void;
+  onOpenContacts?: () => void;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({
+  onSuccess,
+  onOpenTerms,
+  onOpenPrivacy,
+  onOpenContacts,
+}) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -89,7 +98,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-md">
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-start overflow-y-auto bg-slate-950/60 p-4 py-8 backdrop-blur-md">
       {/* Background patterned grid */}
       <div className="pointer-events-none fixed inset-0 opacity-20 [background-image:linear-gradient(rgba(16,94,76,0.3)_1px,transparent_1px),linear-gradient(90deg,rgba(16,94,76,0.3)_1px,transparent_1px)] [background-size:32px_32px]" />
 
@@ -319,7 +328,47 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             <span>Войти как демо-преподаватель (teacher@doska.ru)</span>
           </button>
         </div>
+
+        {/* Legal Disclaimer */}
+        <div className="mt-4 border-t border-slate-100 pt-3 text-center text-[10px] leading-relaxed text-slate-400">
+          <span>Регистрируясь или входя, вы соглашаетесь с </span>
+          {onOpenTerms ? (
+            <button
+              type="button"
+              onClick={onOpenTerms}
+              className="font-semibold text-slate-600 underline hover:text-emerald-800"
+            >
+              Публичной офертой
+            </button>
+          ) : (
+            <span className="font-semibold text-slate-600">Публичной офертой</span>
+          )}
+          <span> и </span>
+          {onOpenPrivacy ? (
+            <button
+              type="button"
+              onClick={onOpenPrivacy}
+              className="font-semibold text-slate-600 underline hover:text-emerald-800"
+            >
+              Политикой конфиденциальности
+            </button>
+          ) : (
+            <span className="font-semibold text-slate-600">Политикой конфиденциальности</span>
+          )}
+        </div>
       </div>
+
+      {/* Footer for unauthenticated screen (moderation compliance) */}
+      {onOpenTerms && onOpenPrivacy && onOpenContacts && (
+        <div className="relative z-10 mt-6 w-full max-w-4xl">
+          <Footer
+            onOpenTerms={onOpenTerms}
+            onOpenPrivacy={onOpenPrivacy}
+            onOpenContacts={onOpenContacts}
+            className="rounded-2xl border border-emerald-950/10 shadow-lg bg-white/90"
+          />
+        </div>
+      )}
     </div>
   );
 };

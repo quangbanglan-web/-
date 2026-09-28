@@ -2,7 +2,7 @@ import { authFetch } from './auth';
 import { CreateSubscriptionResponse, SubscriptionInfo } from '../types/payment';
 
 export async function createSubscriptionPayment(): Promise<CreateSubscriptionResponse> {
-  const response = await authFetch('/api/payments/create-subscription', {
+  const response = await authFetch('/api/payments/create', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -11,7 +11,7 @@ export async function createSubscriptionPayment(): Promise<CreateSubscriptionRes
 
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || 'Не удалось создать платеж');
+    throw new Error(data.error || 'Не удалось создать платеж в ЮKassa');
   }
 
   return data;

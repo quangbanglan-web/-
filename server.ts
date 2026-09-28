@@ -20,7 +20,8 @@ const PORT = Number(process.env.PORT) || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'doska-super-secret-jwt-commercial-key-2026';
 const YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID || '';
 const YOOKASSA_SECRET_KEY = process.env.YOOKASSA_SECRET_KEY || '';
-const APP_URL = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+const BASE_URL = (process.env.BASE_URL || process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+const APP_URL = BASE_URL;
 
 app.use(express.json({ limit: '25mb' }));
 app.use(cors());
@@ -470,13 +471,13 @@ app.post('/api/ads/impression', (req: Request, res: Response) => {
 
 // ----------------- Payments & Subscriptions (YooKassa) -----------------
 
-// POST /api/payments/create-subscription — Инициализация рекуррентной подписки 99 ₽/мес
-app.post('/api/payments/create-subscription', authMiddleware, async (req: AuthRequest, res: Response) => {
+// POST /api/payments/create & POST /api/payments/create-subscription — Инициализация платежа 99 ₽/мес
+const handleCreatePayment = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const idempotenceKey = randomUUID();
 
-    // Если заданы рабочие ключи ЮKassa
+    // Если заданы рабочие ключи ЮKassa в .env: отправляем запрос к официальному API
     if (YOOKASSA_SHOP_ID && YOOKASSA_SECRET_KEY && YOOKASSA_SHOP_ID !== 'test_shop_id') {
       try {
         const basicAuth = Buffer.from(`${YOOKASSA_SHOP_ID}:${YOOKASSA_SECRET_KEY}`).toString('base64');
@@ -491,12 +492,12 @@ app.post('/api/payments/create-subscription', authMiddleware, async (req: AuthRe
             amount: { value: '99.00', currency: 'RUB' },
             capture: true,
             save_payment_method: true,
+            description: 'Подписка DOSKA PRO на 1 месяц',
+            metadata: { user_id: userId },
             confirmation: {
               type: 'redirect',
-              return_url: `${APP_URL}/?payment=success`,
+              return_url: `${BASE_URL}/?payment=success`,
             },
-            description: 'Автоподписка DOSKA PRO — 99 ₽/мес',
-            metadata: { user_id: userId },
           }),
         });
 
@@ -513,30 +514,35 @@ app.post('/api/payments/create-subscription', authMiddleware, async (req: AuthRe
             payment_id: yooData.id,
           });
         }
-        console.warn('YooKassa live response error, activating sandbox fallback:', yooData);
+        console.warn('[YooKassa Warning] Live API returned non-ok status:', yooData);
       } catch (yooErr) {
-        console.warn('YooKassa request error, activating sandbox fallback:', yooErr);
+        console.warn('[YooKassa Error] Request failed, activating sandbox fallback:', yooErr);
       }
+    } else {
+      console.warn('[YooKassa Dev] YOOKASSA_SHOP_ID or YOOKASSA_SECRET_KEY not set. Using sandbox mock payment URL.');
     }
 
-    // Режим песочницы / Sandbox эмуляции при тестировании
+    // Режим разработки / Sandbox эмуляция при локальном запуске
     const mockPaymentId = 'pay_' + randomUUID();
     database.prepare(`
       INSERT INTO payments (id, user_id, amount, status, is_recurrent)
       VALUES (?, ?, 99, 'pending', 0)
     `).run(mockPaymentId, userId);
 
-    const confirmationUrl = `${APP_URL}/?mock_payment_id=${mockPaymentId}`;
+    const mockUrl = `${BASE_URL}/?mock_payment_id=${mockPaymentId}`;
     return res.json({
-      confirmation_url: confirmationUrl,
+      confirmation_url: mockUrl,
       payment_id: mockPaymentId,
       is_sandbox: true,
     });
   } catch (error: any) {
-    console.error('Error creating subscription payment:', error);
+    console.error('Error creating payment:', error);
     return res.status(500).json({ error: 'Ошибка создания платежа в платежной системе' });
   }
-});
+};
+
+app.post('/api/payments/create', authMiddleware, handleCreatePayment);
+app.post('/api/payments/create-subscription', authMiddleware, handleCreatePayment);
 
 // POST /api/payments/webhook — Вебхук от ЮKassa (или симулятора оплаты)
 app.post('/api/payments/webhook', (req: Request, res: Response) => {
@@ -1122,24 +1128,36 @@ LaTeX: ${latex}
   }
 });
 
-// Setup Vite middleware in dev or static files in production
+// Setup Vite middleware in dev or static files in production (NetAngels / VPS)
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production' || process.env.npm_lifecycle_event === 'start';
+  const distPath = path.join(__dirname, 'dist');
 
   if (!isProd) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (err) {
+      console.warn('Vite dev middleware error, using static dist fallback:', err);
+      if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+        app.get('*', (_req: Request, res: Response) => {
+          res.sendFile(path.join(distPath, 'index.html'));
+        });
+      }
+    }
   } else {
-    const distPath = path.resolve(__dirname, 'dist');
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
       app.get('*', (_req: Request, res: Response) => {
-        res.sendFile(path.resolve(distPath, 'index.html'));
+        res.sendFile(path.join(distPath, 'index.html'));
       });
+    } else {
+      console.warn('[Warning] dist/ directory not found! Please run "npm run build" before running in production.');
     }
   }
 
