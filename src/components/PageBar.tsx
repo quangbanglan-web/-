@@ -13,6 +13,9 @@ import {
   Grid,
   ChevronUp,
   Settings,
+  Save,
+  FolderOpen,
+  FilePlus2,
 } from 'lucide-react';
 
 interface PageBarProps {
@@ -35,6 +38,9 @@ interface PageBarProps {
   subjectMode: SubjectMode;
   onSwitchSubject: (mode: SubjectMode) => void;
   onOpenHub: () => void;
+  onSaveBoard: () => void;
+  onOpenBoards: () => void;
+  onNewBoard: () => void;
   // Geometry Snap
   snapToGrid: boolean;
   onToggleSnapToGrid: () => void;
@@ -61,6 +67,9 @@ export const PageBar: React.FC<PageBarProps> = ({
   subjectMode,
   onSwitchSubject,
   onOpenHub,
+  onSaveBoard,
+  onOpenBoards,
+  onNewBoard,
   snapToGrid,
   onToggleSnapToGrid,
   onCollapse,
@@ -196,6 +205,40 @@ export const PageBar: React.FC<PageBarProps> = ({
 
       {/* Right: Zoom, Settings (Themes here), Export, Clear, Fullscreen, Collapse */}
       <div className="flex items-center gap-1.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSaveBoard();
+          }}
+          title="Сохранить доску"
+          className="flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition"
+        >
+          <Save className="w-4 h-4" />
+          <span className="hidden xl:inline">Сохранить</span>
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenBoards();
+          }}
+          title="Мои доски"
+          className="flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 text-xs font-semibold transition"
+        >
+          <FolderOpen className="w-4 h-4" />
+          <span className="hidden xl:inline">Мои доски</span>
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onNewBoard();
+          }}
+          title="Создать новую доску"
+          className="flex shrink-0 items-center gap-1.5 px-2 py-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 text-xs font-semibold transition"
+        >
+          <FilePlus2 className="w-4 h-4" />
+          <span className="hidden xl:inline">Новая доска</span>
+        </button>
+
         {/* Zoom controls */}
         <div className="hidden sm:flex items-center bg-slate-100 dark:bg-slate-800/80 rounded-xl p-0.5 text-xs font-mono">
           <button

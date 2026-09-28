@@ -23,20 +23,44 @@ import {
   stabilizePoint,
   SmoothingLevel,
 } from './utils/strokeSmoother';
-import { HubEntrance } from './components/HubEntrance';
+import { Dashboard, DashboardBoard, DashboardSubject } from './components/Dashboard';
+import { BoardHeader, BoardSaveStatus } from './components/BoardHeader';
 import { Toolbar } from './components/Toolbar';
-import { PageBar } from './components/PageBar';
 import { VirtualRuler, VirtualProtractor } from './components/VirtualInstruments';
 import { QuickMathModal } from './components/QuickMathModal';
 import { GraphPlotModal } from './components/GraphPlotModal';
 import { SettingsModal } from './components/SettingsModal';
 import { ToolbarCustomizerModal } from './components/ToolbarCustomizerModal';
-import { ChevronDown } from 'lucide-react';
+import { AuthModal } from './components/AuthModal';
+import { User } from './types/auth';
+import { authFetch, fetchCurrentUser, getStoredToken, removeStoredToken } from './utils/auth';
+import { X, LoaderCircle } from 'lucide-react';
 
 const ALGEBRA_STORAGE_KEY = 'mathboard_algebra_pages_v3';
 const GEOMETRY_STORAGE_KEY = 'mathboard_geometry_pages_v3';
+const CUSTOM_SUBJECTS_STORAGE_KEY = 'mathboard_custom_subjects_v1';
 const TOOLBAR_CUSTOM_KEY = 'mathboard_toolbar_custom_v2';
 const TOOLBAR_POS_KEY = 'mathboard_toolbar_pos_v2';
+
+interface SavedBoardSummary {
+  id: string;
+  subject: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface SavedBoardRecord extends SavedBoardSummary {
+  data: SavedBoardData;
+}
+
+interface SavedBoardData {
+  subjectMode?: SubjectMode;
+  algebraPages?: PageData[];
+  geometryPages?: PageData[];
+  currentAlgebraPageId?: string;
+  currentGeometryPageId?: string;
+}
 
 const DEFAULT_TOOLBAR_CUSTOMIZATION: ToolbarCustomization = {
   pen: true,
@@ -52,16 +76,85 @@ const DEFAULT_TOOLBAR_CUSTOMIZATION: ToolbarCustomization = {
   pan: true,
 };
 
+const DEFAULT_SUBJECTS: DashboardSubject[] = [
+  { id: 'math', label: 'Математика', description: 'Формулы, вычисления и построения' },
+  { id: 'physics', label: 'Физика', description: 'Задачи, схемы и эксперименты' },
+  { id: 'informatics', label: 'Информатика', description: 'Алгоритмы и заметки' },
+  { id: 'geography', label: 'География', description: 'Карты, темы и конспекты' },
+  { id: 'history', label: 'История', description: 'Хронология и материалы уроков' },
+  { id: 'geometry', label: 'Геометрия', description: 'Чертежи и геометрические построения' },
+];
+
+const createAutoTitle = (subjectLabel: string) => {
+  const timestamp = new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date()).replace(',', '');
+  return `${subjectLabel} — Урок от ${timestamp}`;
+};
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Active View: Hub Entrance or Canvas Board
-  const [activeView, setActiveView] = useState<'hub' | 'board'>('hub');
+  const initialBoardId = useRef<string | null>(new URLSearchParams(window.location.search).get('id'));
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
+  const [activeView, setActiveView] = useState<'dashboard' | 'board'>('dashboard');
   const [subjectMode, setSubjectMode] = useState<SubjectMode>('algebra');
+  const [subjects, setSubjects] = useState<DashboardSubject[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CUSTOM_SUBJECTS_STORAGE_KEY) || '[]');
+      if (Array.isArray(saved)) return [...DEFAULT_SUBJECTS, ...saved.filter((item) => item?.id && item?.label)];
+    } catch {}
+    return DEFAULT_SUBJECTS;
+  });
+  const [selectedSubjectId, setSelectedSubjectId] = useState('math');
+  const [boards, setBoards] = useState<SavedBoardSummary[]>([]);
+  const [isLoadingBoards, setIsLoadingBoards] = useState(false);
+  const [activeBoard, setActiveBoard] = useState<{ id: string | null; subject: string; title: string } | null>(null);
+  const [isInitialBoardLoading, setIsInitialBoardLoading] = useState(Boolean(initialBoardId.current));
+  const [saveStatus, setSaveStatus] = useState<BoardSaveStatus>('saved');
+  const dirtyRef = useRef(false);
+  const saveBoardRef = useRef<() => Promise<boolean>>(async () => false);
+  const [boardMessage, setBoardMessage] = useState('');
 
-  // Top PageBar Visibility
-  const [isPageBarVisible, setIsPageBarVisible] = useState<boolean>(true);
+  const handleLogout = useCallback(() => {
+    removeStoredToken();
+    setCurrentUser(null);
+    setBoards([]);
+    setActiveBoard(null);
+    setActiveView('dashboard');
+    setBoardUrl(null);
+  }, []);
+
+  // Check auth session on launch
+  useEffect(() => {
+    let isActive = true;
+    const token = getStoredToken();
+    if (!token) {
+      setIsAuthChecking(false);
+      return;
+    }
+
+    fetchCurrentUser()
+      .then((user) => {
+        if (isActive) setCurrentUser(user);
+      })
+      .catch(() => {
+        if (isActive) setCurrentUser(null);
+      })
+      .finally(() => {
+        if (isActive) setIsAuthChecking(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   // Algebra Pages
   const [algebraPages, setAlgebraPages] = useState<PageData[]>(() => {
@@ -111,8 +204,6 @@ export default function App() {
     ];
   });
 
-  const [isBoardApiReady, setIsBoardApiReady] = useState(false);
-
   // Active page IDs
   const [currentAlgebraPageId, setCurrentAlgebraPageId] = useState<string>('algebra-page-1');
   const [currentGeometryPageId, setCurrentGeometryPageId] = useState<string>('geometry-page-1');
@@ -127,6 +218,12 @@ export default function App() {
     () => pages.find((p) => p.id === currentPageId) || pages[0],
     [pages, currentPageId]
   );
+
+  const markDirty = () => {
+    if (!activeBoard) return;
+    dirtyRef.current = true;
+    setSaveStatus('unsaved');
+  };
 
   // Undo / Redo history for current page
   const [undoStack, setUndoStack] = useState<
@@ -214,6 +311,7 @@ export default function App() {
         zoom?: number;
       }
     ) => {
+      markDirty();
       setPages((prevPages) =>
         prevPages.map((page) => {
           if (page.id !== currentPageId) return page;
@@ -225,7 +323,7 @@ export default function App() {
         })
       );
     },
-    [currentPageId, setPages]
+    [activeBoard, currentPageId, setPages]
   );
 
   // Save pages to localStorage
@@ -246,47 +344,110 @@ export default function App() {
   }, [geometryPages]);
 
   useEffect(() => {
-    let isActive = true;
+    try {
+      localStorage.setItem(CUSTOM_SUBJECTS_STORAGE_KEY, JSON.stringify(subjects.filter(
+        (subject) => !DEFAULT_SUBJECTS.some((defaultSubject) => defaultSubject.id === subject.id)
+      )));
+    } catch {}
+  }, [subjects]);
 
-    fetch('/api/board')
-      .then((response) => {
-        if (!response.ok) throw new Error(`Board load failed: ${response.status}`);
-        return response.json();
-      })
-      .then((saved: { algebraPages?: PageData[] | null; geometryPages?: PageData[] | null }) => {
-        if (!isActive) return;
-        if (Array.isArray(saved.algebraPages) && saved.algebraPages.length > 0) {
-          setAlgebraPages(saved.algebraPages);
-        }
-        if (Array.isArray(saved.geometryPages) && saved.geometryPages.length > 0) {
-          setGeometryPages(saved.geometryPages);
-        }
-      })
-      .catch((error) => console.warn('Failed to load board from API:', error))
-      .finally(() => {
-        if (isActive) setIsBoardApiReady(true);
-      });
+  const setBoardUrl = (id: string | null) => {
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set('id', id);
+    else url.searchParams.delete('id');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  };
 
-    return () => {
-      isActive = false;
-    };
-  }, []);
+  const makeEmptyPage = (mode: SubjectMode): PageData => ({
+    id: `${mode}-page-${crypto.randomUUID()}`,
+    title: 'Лист 1',
+    strokes: [],
+    mathElements: [],
+    graphs: [],
+    pan: { x: window.innerWidth / 3, y: 150 },
+    zoom: 1,
+  });
+
+  const labelForSubject = (id: string) => subjects.find((subject) => subject.id === id)?.label || id;
+
+  const activateBoard = (board: SavedBoardRecord) => {
+    const mode: SubjectMode = board.subject === 'geometry' || board.data.subjectMode === 'geometry'
+      ? 'geometry'
+      : 'algebra';
+    const savedPages = mode === 'geometry' ? board.data.geometryPages : board.data.algebraPages;
+    const restoredPages = Array.isArray(savedPages) && savedPages.length ? savedPages : [makeEmptyPage(mode)];
+    const pageId = mode === 'geometry'
+      ? board.data.currentGeometryPageId || restoredPages[0].id
+      : board.data.currentAlgebraPageId || restoredPages[0].id;
+    const restoredPage = restoredPages.find((page) => page.id === pageId) || restoredPages[0];
+
+    setAlgebraPages(mode === 'algebra' ? restoredPages : []);
+    setGeometryPages(mode === 'geometry' ? restoredPages : []);
+    setCurrentAlgebraPageId(mode === 'algebra' ? pageId : '');
+    setCurrentGeometryPageId(mode === 'geometry' ? pageId : '');
+    setSubjectMode(mode);
+    setPan(restoredPage.pan || { x: 200, y: 150 });
+    setZoom(restoredPage.zoom || 1);
+    setUndoStack([]);
+    setRedoStack([]);
+    setActiveBoard({ id: board.id, subject: board.subject, title: board.title });
+    setSelectedSubjectId(board.subject);
+    setSubjects((existing) => existing.some((subject) => subject.id === board.subject)
+      ? existing
+      : [...existing, { id: board.subject, label: board.subject }]);
+    dirtyRef.current = false;
+    setSaveStatus('saved');
+    setBoardUrl(board.id);
+    setActiveView('board');
+  };
 
   useEffect(() => {
-    if (!isBoardApiReady) return;
+    if (activeView !== 'dashboard' || !currentUser) return;
+    let isActive = true;
+    setIsLoadingBoards(true);
+    authFetch(`/api/boards?subject=${encodeURIComponent(selectedSubjectId)}`, {}, handleLogout)
+      .then((response) => {
+        if (!response.ok) throw new Error(`Ошибка загрузки списка: ${response.status}`);
+        return response.json();
+      })
+      .then((result: SavedBoardSummary[]) => {
+        if (isActive) setBoards(result);
+      })
+      .catch((error: Error) => {
+        if (isActive) setBoardMessage(error.message);
+      })
+      .finally(() => {
+        if (isActive) setIsLoadingBoards(false);
+      });
+    return () => { isActive = false; };
+  }, [activeView, selectedSubjectId, currentUser, handleLogout]);
 
-    const timeoutId = window.setTimeout(() => {
-      fetch('/api/board', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ algebraPages, geometryPages }),
-      }).then((response) => {
-        if (!response.ok) throw new Error(`Board save failed: ${response.status}`);
-      }).catch((error) => console.warn('Failed to save board to API:', error));
-    }, 500);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [algebraPages, geometryPages, isBoardApiReady]);
+  useEffect(() => {
+    const boardId = initialBoardId.current;
+    if (!boardId || !currentUser) {
+      if (!boardId) setIsInitialBoardLoading(false);
+      return;
+    }
+    let isActive = true;
+    authFetch(`/api/boards/${encodeURIComponent(boardId)}`, {}, handleLogout)
+      .then((response) => {
+        if (!response.ok) throw new Error(response.status === 404 ? 'Доска не найдена' : `Ошибка загрузки: ${response.status}`);
+        return response.json();
+      })
+      .then((board: SavedBoardRecord) => {
+        if (isActive) activateBoard(board);
+      })
+      .catch((error: Error) => {
+        if (!isActive) return;
+        setBoardMessage(error.message);
+        setActiveView('dashboard');
+        setBoardUrl(null);
+      })
+      .finally(() => {
+        if (isActive) setIsInitialBoardLoading(false);
+      });
+    return () => { isActive = false; };
+  }, [currentUser, handleLogout]);
 
   // Save toolbar pos & custom
   useEffect(() => {
@@ -426,7 +587,7 @@ export default function App() {
 
   // Main Canvas Rendering Loop
   useEffect(() => {
-    if (activeView === 'hub') return;
+    if (activeView !== 'board') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -617,6 +778,7 @@ export default function App() {
       const newPanX = pan.x + (center.x / newZoom - center.x / zoom);
       const newPanY = pan.y + (center.y / newZoom - center.y / zoom);
 
+      markDirty();
       setZoom(newZoom);
       setPan({ x: newPanX, y: newPanY });
       return;
@@ -626,6 +788,7 @@ export default function App() {
     if (isPanningRef.current) {
       const dx = (e.clientX - panStartRef.current.x) / zoom;
       const dy = (e.clientY - panStartRef.current.y) / zoom;
+      markDirty();
       setPan((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
       panStartRef.current = { x: e.clientX, y: e.clientY };
       return;
@@ -739,6 +902,7 @@ export default function App() {
     const newPanX = pan.x + (mouseX / newZoom - mouseX / zoom);
     const newPanY = pan.y + (mouseY / newZoom - mouseY / zoom);
 
+    markDirty();
     setZoom(newZoom);
     setPan({ x: newPanX, y: newPanY });
   };
@@ -781,16 +945,139 @@ export default function App() {
     }));
   };
 
-  // Switch between subjects
-  const handleSwitchSubject = (mode: SubjectMode) => {
-    setSubjectMode(mode);
-    const targetPages = mode === 'algebra' ? algebraPages : geometryPages;
-    const targetId = mode === 'algebra' ? currentAlgebraPageId : currentGeometryPageId;
-    const p = targetPages.find((pg) => pg.id === targetId) || targetPages[0];
-    if (p) {
-      setPan(p.pan || { x: 200, y: 150 });
-      setZoom(p.zoom || 1);
+  const handleSaveBoard = async (): Promise<boolean> => {
+    if (!activeBoard || !currentPage) return false;
+    setSaveStatus('saving');
+    const id = activeBoard.id || crypto.randomUUID();
+    const persistedPages = pages.map((page) => page.id === currentPageId ? { ...page, pan, zoom } : page);
+    const data: SavedBoardData = {
+      subjectMode,
+      algebraPages: subjectMode === 'algebra' ? persistedPages : [],
+      geometryPages: subjectMode === 'geometry' ? persistedPages : [],
+      currentAlgebraPageId: subjectMode === 'algebra' ? currentPageId : undefined,
+      currentGeometryPageId: subjectMode === 'geometry' ? currentPageId : undefined,
+    };
+
+    try {
+      const response = await authFetch('/api/boards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, subject: activeBoard.subject, title: activeBoard.title, data }),
+      }, handleLogout);
+      if (!response.ok) throw new Error(`Ошибка сохранения: ${response.status}`);
+      const saved = await response.json() as { title: string };
+      setActiveBoard((current) => current ? { ...current, id, title: saved.title } : current);
+      setBoardUrl(id);
+      dirtyRef.current = false;
+      setSaveStatus('saved');
+      return true;
+    } catch (error) {
+      setSaveStatus('error');
+      setBoardMessage(error instanceof Error ? error.message : 'Не удалось сохранить доску');
+      return false;
     }
+  };
+  saveBoardRef.current = handleSaveBoard;
+
+  useEffect(() => {
+    if (activeView !== 'board' || !activeBoard) return;
+    const intervalId = window.setInterval(() => {
+      if (dirtyRef.current) void saveBoardRef.current();
+    }, 60_000);
+    return () => window.clearInterval(intervalId);
+  }, [activeView, activeBoard?.id, activeBoard?.subject]);
+
+  const handleRenameActiveBoard = async (title: string) => {
+    if (!activeBoard) return;
+    if (activeBoard.id) {
+      try {
+        const response = await authFetch(`/api/boards/${encodeURIComponent(activeBoard.id)}/rename`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        }, handleLogout);
+        if (!response.ok) {
+          const message = await response.json().catch(() => ({}));
+          throw new Error(message.error || `Ошибка переименования: ${response.status}`);
+        }
+      } catch (error) {
+        setBoardMessage(error instanceof Error ? error.message : 'Не удалось переименовать доску');
+        throw error;
+      }
+    } else {
+      markDirty();
+    }
+    setActiveBoard((current) => current ? { ...current, title } : current);
+  };
+
+  const handleLoadBoard = async (id: string) => {
+    try {
+      const response = await authFetch(`/api/boards/${encodeURIComponent(id)}`, {}, handleLogout);
+      if (!response.ok) throw new Error(response.status === 404 ? 'Доска не найдена' : `Ошибка загрузки: ${response.status}`);
+      activateBoard(await response.json() as SavedBoardRecord);
+    } catch (error) {
+      setBoardMessage(error instanceof Error ? error.message : 'Не удалось загрузить доску');
+    }
+  };
+
+  const handleCreateBoard = (subjectId = selectedSubjectId) => {
+    const mode: SubjectMode = subjectId === 'geometry' ? 'geometry' : 'algebra';
+    const subjectLabel = labelForSubject(subjectId);
+    const newPage = makeEmptyPage(mode);
+    setAlgebraPages(mode === 'algebra' ? [newPage] : []);
+    setGeometryPages(mode === 'geometry' ? [newPage] : []);
+    setCurrentAlgebraPageId(mode === 'algebra' ? newPage.id : '');
+    setCurrentGeometryPageId(mode === 'geometry' ? newPage.id : '');
+    setSubjectMode(mode);
+    setPan(newPage.pan);
+    setZoom(1);
+    setUndoStack([]);
+    setRedoStack([]);
+    setSelectedSubjectId(subjectId);
+    setActiveBoard({ id: null, subject: subjectId, title: createAutoTitle(subjectLabel) });
+    dirtyRef.current = true;
+    setSaveStatus('unsaved');
+    setBoardUrl(null);
+    setActiveView('board');
+  };
+
+  const handleReturnToDashboard = async () => {
+    if (activeBoard && (dirtyRef.current || !activeBoard.id)) {
+      const saved = await handleSaveBoard();
+      if (!saved) return;
+    }
+    if (activeBoard) setSelectedSubjectId(activeBoard.subject);
+    setActiveView('dashboard');
+    setActiveBoard(null);
+    setBoardUrl(null);
+    setIsQuickMathOpen(false);
+    setIsGraphPlotOpen(false);
+    setIsSettingsOpen(false);
+    setIsToolbarCustomizerOpen(false);
+    setShowRuler(false);
+    setShowProtractor(false);
+  };
+
+  const handleRenameSavedBoard = async (id: string, title: string) => {
+    const response = await authFetch(`/api/boards/${encodeURIComponent(id)}/rename`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    }, handleLogout);
+    if (!response.ok) throw new Error(`Ошибка переименования: ${response.status}`);
+    setBoards((existing) => existing.map((board) => board.id === id ? { ...board, title } : board));
+  };
+
+  const handleDeleteSavedBoard = async (id: string) => {
+    const response = await authFetch(`/api/boards/${encodeURIComponent(id)}`, { method: 'DELETE' }, handleLogout);
+    if (!response.ok) throw new Error(`Ошибка удаления: ${response.status}`);
+    setBoards((existing) => existing.filter((board) => board.id !== id));
+  };
+
+  const handleAddSubject = (label: string) => {
+    const subject = { id: `custom-${crypto.randomUUID()}`, label };
+    setSubjects((existing) => [...existing, subject]);
+    setSelectedSubjectId(subject.id);
   };
 
   // Page Operations
@@ -809,12 +1096,14 @@ export default function App() {
     setCurrentPageId(newId);
     setPan(newPage.pan);
     setZoom(1);
+    markDirty();
   };
 
   const handleDeletePage = (id: string) => {
     if (pages.length <= 1) return;
     const remaining = pages.filter((p) => p.id !== id);
     setPages(remaining);
+    markDirty();
     if (currentPageId === id) {
       setCurrentPageId(remaining[0].id);
       setPan(remaining[0].pan);
@@ -855,6 +1144,21 @@ export default function App() {
 
   const isDark = theme === 'chalkboard' || theme === 'blueprint';
 
+  if (isAuthChecking) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#f2f6f3]">
+        <div className="flex flex-col items-center gap-3 text-emerald-900">
+          <LoaderCircle className="h-8 w-8 animate-spin text-emerald-800" />
+          <p className="text-sm font-semibold tracking-wide">Инициализация рабочей среды...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <AuthModal onSuccess={(user) => setCurrentUser(user)} />;
+  }
+
   return (
     <div
       ref={containerRef}
@@ -866,71 +1170,72 @@ export default function App() {
           : 'bg-[#ffffff]'
       }`}
     >
-      {/* 1. Hub Entrance Screen (Choice between Algebra & Geometry) */}
-      {activeView === 'hub' && (
-        <HubEntrance
-          onSelectSubject={(subj) => {
-            handleSwitchSubject(subj);
-            setActiveView('board');
-          }}
-          algebraPageCount={algebraPages.length}
-          geometryPageCount={geometryPages.length}
+      {activeView === 'dashboard' && (isInitialBoardLoading ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[#f2f6f3] text-sm font-semibold text-emerald-900">Открываем доску...</div>
+      ) : (
+        <Dashboard
+          subjects={subjects}
+          selectedSubjectId={selectedSubjectId}
+          boards={boards}
+          isLoading={isLoadingBoards}
+          currentUser={currentUser}
+          onSelectSubject={setSelectedSubjectId}
+          onCreateBoard={() => handleCreateBoard(selectedSubjectId)}
+          onOpenBoard={handleLoadBoard}
+          onRenameBoard={handleRenameSavedBoard}
+          onDeleteBoard={handleDeleteSavedBoard}
+          onAddSubject={handleAddSubject}
+          onLogout={handleLogout}
         />
-      )}
+      ))}
 
-      {/* 2. Top Header & Page Tabs (with Collapse / Expand) */}
-      {isPageBarVisible ? (
-        <PageBar
+      {activeView === 'board' && activeBoard && (
+        <BoardHeader
+          subjectLabel={labelForSubject(activeBoard.subject)}
+          title={activeBoard.title}
+          saveStatus={saveStatus}
           pages={pages}
           currentPageId={currentPageId}
+          theme={theme}
+          zoom={zoom}
+          isFullscreen={isFullscreen}
+          onBack={() => { void handleReturnToDashboard(); }}
+          onRename={handleRenameActiveBoard}
+          onSave={() => { void handleSaveBoard(); }}
           onSelectPage={(id) => {
             setCurrentPageId(id);
-            const p = pages.find((pg) => pg.id === id);
-            if (p) {
-              setPan(p.pan || { x: 200, y: 150 });
-              setZoom(p.zoom || 1);
-            }
+            const page = pages.find((item) => item.id === id);
+            if (!page) return;
+            setPan(page.pan || { x: 200, y: 150 });
+            setZoom(page.zoom || 1);
+            markDirty();
           }}
           onAddPage={handleAddPage}
           onDeletePage={handleDeletePage}
-          onClearPage={handleClearPage}
-          zoom={zoom}
-          onZoomIn={() => setZoom((z) => Math.min(5, z * 1.2))}
-          onZoomOut={() => setZoom((z) => Math.max(0.2, z / 1.2))}
-          onResetZoom={() => {
-            setZoom(1);
-            setPan({ x: window.innerWidth / 3, y: 150 });
-          }}
-          theme={theme}
-          onExportPNG={handleExportPNG}
+          onZoomIn={() => { markDirty(); setZoom((value) => Math.min(5, value * 1.2)); }}
+          onZoomOut={() => { markDirty(); setZoom((value) => Math.max(0.2, value / 1.2)); }}
+          onResetZoom={() => { markDirty(); setZoom(1); setPan({ x: window.innerWidth / 3, y: 150 }); }}
           onOpenSettings={() => setIsSettingsOpen(true)}
-          isFullscreen={isFullscreen}
+          onClearPage={handleClearPage}
+          onExportPNG={handleExportPNG}
           onToggleFullscreen={handleToggleFullscreen}
-          subjectMode={subjectMode}
-          onSwitchSubject={handleSwitchSubject}
-          onOpenHub={() => setActiveView('hub')}
-          snapToGrid={snapToGrid}
-          onToggleSnapToGrid={() => setSnapToGrid(!snapToGrid)}
-          onCollapse={() => setIsPageBarVisible(false)}
         />
-      ) : (
-        /* Floating Unfold Button when PageBar is hidden */
-        <button
-          onClick={() => setIsPageBarVisible(true)}
-          title="Развернуть верхнюю панель"
-          className={`fixed top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full shadow-lg border backdrop-blur-md transition hover:scale-105 active:scale-95 ${
-            isDark
-              ? 'bg-slate-900/90 border-slate-700 text-slate-200'
-              : 'bg-white/95 border-slate-200 text-slate-800'
-          }`}
-        >
-          <ChevronDown className="w-4 h-4 text-blue-500 animate-bounce" />
-          <span className="text-xs font-bold">
-            {subjectMode === 'algebra' ? 'Алгебра' : 'Геометрия'} • {currentPage.title}
-          </span>
-        </button>
       )}
 
+      {boardMessage && (
+        <div
+          role="status"
+          className="fixed bottom-5 left-1/2 z-[70] -translate-x-1/2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg"
+        >
+          {boardMessage}
+          <button onClick={() => setBoardMessage('')} className="ml-3 text-slate-300 hover:text-white" aria-label="Закрыть сообщение">
+            <X className="inline h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {activeView === 'board' && (
+        <>
       {/* 3. Main Drawing Canvas */}
       <canvas
         ref={canvasRef}
@@ -1043,6 +1348,8 @@ export default function App() {
           })
         }
       />
+        </>
+      )}
     </div>
   );
 }
