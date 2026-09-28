@@ -111,6 +111,8 @@ export default function App() {
     ];
   });
 
+  const [isBoardApiReady, setIsBoardApiReady] = useState(false);
+
   // Active page IDs
   const [currentAlgebraPageId, setCurrentAlgebraPageId] = useState<string>('algebra-page-1');
   const [currentGeometryPageId, setCurrentGeometryPageId] = useState<string>('geometry-page-1');
@@ -242,6 +244,49 @@ export default function App() {
       console.warn('Failed to save geometry pages:', e);
     }
   }, [geometryPages]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    fetch('/api/board')
+      .then((response) => {
+        if (!response.ok) throw new Error(`Board load failed: ${response.status}`);
+        return response.json();
+      })
+      .then((saved: { algebraPages?: PageData[] | null; geometryPages?: PageData[] | null }) => {
+        if (!isActive) return;
+        if (Array.isArray(saved.algebraPages) && saved.algebraPages.length > 0) {
+          setAlgebraPages(saved.algebraPages);
+        }
+        if (Array.isArray(saved.geometryPages) && saved.geometryPages.length > 0) {
+          setGeometryPages(saved.geometryPages);
+        }
+      })
+      .catch((error) => console.warn('Failed to load board from API:', error))
+      .finally(() => {
+        if (isActive) setIsBoardApiReady(true);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isBoardApiReady) return;
+
+    const timeoutId = window.setTimeout(() => {
+      fetch('/api/board', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ algebraPages, geometryPages }),
+      }).then((response) => {
+        if (!response.ok) throw new Error(`Board save failed: ${response.status}`);
+      }).catch((error) => console.warn('Failed to save board to API:', error));
+    }, 500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [algebraPages, geometryPages, isBoardApiReady]);
 
   // Save toolbar pos & custom
   useEffect(() => {

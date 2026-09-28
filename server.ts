@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { DatabaseSync } from 'node:sqlite';
 import { GoogleGenAI, Type } from '@google/genai';
 
 dotenv.config();
@@ -14,6 +15,67 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '25mb' }));
+
+const dataDir = path.resolve(__dirname, 'data');
+fs.mkdirSync(dataDir, { recursive: true });
+const database = new DatabaseSync(path.join(dataDir, 'board.sqlite'));
+database.exec(`
+  CREATE TABLE IF NOT EXISTS board_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    algebra_pages TEXT NOT NULL,
+    geometry_pages TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+const isPageArray = (value: unknown): boolean =>
+  Array.isArray(value) &&
+  value.every(
+    (page) =>
+      page !== null &&
+      typeof page === 'object' &&
+      typeof page.id === 'string' &&
+      typeof page.title === 'string' &&
+      Array.isArray(page.strokes) &&
+      Array.isArray(page.mathElements) &&
+      Array.isArray(page.graphs) &&
+      page.pan !== null &&
+      typeof page.pan === 'object' &&
+      typeof page.pan.x === 'number' &&
+      typeof page.pan.y === 'number' &&
+      typeof page.zoom === 'number'
+  );
+
+app.get('/api/board', (_req: Request, res: Response) => {
+  const row = database.prepare('SELECT algebra_pages, geometry_pages FROM board_state WHERE id = 1').get() as
+    | { algebra_pages: string; geometry_pages: string }
+    | undefined;
+
+  if (!row) return res.json({ algebraPages: null, geometryPages: null });
+
+  return res.json({
+    algebraPages: JSON.parse(row.algebra_pages),
+    geometryPages: JSON.parse(row.geometry_pages),
+  });
+});
+
+app.put('/api/board', (req: Request, res: Response) => {
+  const { algebraPages, geometryPages } = req.body ?? {};
+  if (!isPageArray(algebraPages) || !isPageArray(geometryPages)) {
+    return res.status(400).json({ error: 'algebraPages and geometryPages must be valid page arrays' });
+  }
+
+  database.prepare(`
+    INSERT INTO board_state (id, algebra_pages, geometry_pages)
+    VALUES (1, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      algebra_pages = excluded.algebra_pages,
+      geometry_pages = excluded.geometry_pages,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(JSON.stringify(algebraPages), JSON.stringify(geometryPages));
+
+  return res.json({ ok: true });
+});
 
 const apiKey = process.env.GEMINI_API_KEY;
 const ai = apiKey
