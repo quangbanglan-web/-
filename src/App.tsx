@@ -134,6 +134,7 @@ export default function App() {
   const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
   const [isBottomBannerVisible, setIsBottomBannerVisible] = useState(false);
   const [pendingBoardIdToOpen, setPendingBoardIdToOpen] = useState<string | null>(null);
+  const pendingBoardIdRef = useRef<string | null>(null);
   const [isInterstitialOpen, setIsInterstitialOpen] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
@@ -429,34 +430,50 @@ export default function App() {
   const labelForSubject = (id: string) => subjects.find((subject) => subject.id === id)?.label || id;
 
   const activateBoard = (board: SavedBoardRecord) => {
-    const mode: SubjectMode = board.subject === 'geometry' || board.data.subjectMode === 'geometry'
-      ? 'geometry'
-      : 'algebra';
-    const savedPages = mode === 'geometry' ? board.data.geometryPages : board.data.algebraPages;
-    const restoredPages = Array.isArray(savedPages) && savedPages.length ? savedPages : [makeEmptyPage(mode)];
-    const pageId = mode === 'geometry'
-      ? board.data.currentGeometryPageId || restoredPages[0].id
-      : board.data.currentAlgebraPageId || restoredPages[0].id;
-    const restoredPage = restoredPages.find((page) => page.id === pageId) || restoredPages[0];
+    try {
+      console.log('[activateBoard] Activating board:', board.id, board.title);
+      let data = board.data;
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data);
+        } catch (e) {
+          console.error('[activateBoard] Failed to parse board.data JSON:', e);
+          data = {};
+        }
+      }
+      const mode: SubjectMode = board.subject === 'geometry' || data?.subjectMode === 'geometry'
+        ? 'geometry'
+        : 'algebra';
+      const savedPages = mode === 'geometry' ? data?.geometryPages : data?.algebraPages;
+      const restoredPages = Array.isArray(savedPages) && savedPages.length ? savedPages : [makeEmptyPage(mode)];
+      const pageId = mode === 'geometry'
+        ? data?.currentGeometryPageId || restoredPages[0].id
+        : data?.currentAlgebraPageId || restoredPages[0].id;
+      const restoredPage = restoredPages.find((page) => page.id === pageId) || restoredPages[0];
 
-    setAlgebraPages(mode === 'algebra' ? restoredPages : []);
-    setGeometryPages(mode === 'geometry' ? restoredPages : []);
-    setCurrentAlgebraPageId(mode === 'algebra' ? pageId : '');
-    setCurrentGeometryPageId(mode === 'geometry' ? pageId : '');
-    setSubjectMode(mode);
-    setPan(restoredPage.pan || { x: 200, y: 150 });
-    setZoom(restoredPage.zoom || 1);
-    setUndoStack([]);
-    setRedoStack([]);
-    setActiveBoard({ id: board.id, subject: board.subject, title: board.title });
-    setSelectedSubjectId(board.subject);
-    setSubjects((existing) => existing.some((subject) => subject.id === board.subject)
-      ? existing
-      : [...existing, { id: board.subject, label: board.subject }]);
-    dirtyRef.current = false;
-    setSaveStatus('saved');
-    setBoardUrl(board.id);
-    setActiveView('board');
+      setAlgebraPages(mode === 'algebra' ? restoredPages : []);
+      setGeometryPages(mode === 'geometry' ? restoredPages : []);
+      setCurrentAlgebraPageId(mode === 'algebra' ? pageId : '');
+      setCurrentGeometryPageId(mode === 'geometry' ? pageId : '');
+      setSubjectMode(mode);
+      setPan(restoredPage.pan || { x: 200, y: 150 });
+      setZoom(restoredPage.zoom || 1);
+      setUndoStack([]);
+      setRedoStack([]);
+      setActiveBoard({ id: board.id, subject: board.subject, title: board.title });
+      setSelectedSubjectId(board.subject);
+      setSubjects((existing) => existing.some((subject) => subject.id === board.subject)
+        ? existing
+        : [...existing, { id: board.subject, label: board.subject }]);
+      dirtyRef.current = false;
+      setSaveStatus('saved');
+      setBoardUrl(board.id);
+      setActiveView('board');
+      console.log('[activateBoard] Switched activeView to board successfully!');
+    } catch (err) {
+      console.error('[activateBoard] Error activating board:', err);
+      setBoardMessage('Ошибка при загрузке доски на холст');
+    }
   };
 
   useEffect(() => {
@@ -1068,33 +1085,48 @@ export default function App() {
     setActiveBoard((current) => current ? { ...current, title } : current);
   };
 
-  const handleLoadBoard = async (id: string) => {
+  const handleLoadBoard = useCallback(async (id: string) => {
     try {
+      console.log('[handleLoadBoard] Fetching board from server:', id);
       const response = await authFetch(`/api/boards/${encodeURIComponent(id)}`, {}, handleLogout);
-      if (!response.ok) throw new Error(response.status === 404 ? 'Доска не найдена' : `Ошибка загрузки: ${response.status}`);
-      activateBoard(await response.json() as SavedBoardRecord);
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        console.error('[handleLoadBoard] Server error response:', response.status, errText);
+        throw new Error(response.status === 404 ? 'Доска не найдена' : `Ошибка загрузки (${response.status})`);
+      }
+      const boardData = (await response.json()) as SavedBoardRecord;
+      console.log('[handleLoadBoard] Received board from server:', boardData.id, boardData.title);
+      activateBoard(boardData);
     } catch (error) {
+      console.error('[handleLoadBoard] Exception loading board:', error);
       setBoardMessage(error instanceof Error ? error.message : 'Не удалось загрузить доску');
+      setActiveView('dashboard');
     }
-  };
+  }, [handleLogout]);
 
   const handleRequestOpenBoard = (id: string) => {
+    console.log('[handleRequestOpenBoard] Requested to open board:', id, 'is_pro:', currentUser?.is_pro);
     if (currentUser?.is_pro) {
       void handleLoadBoard(id);
     } else {
+      pendingBoardIdRef.current = id;
       setPendingBoardIdToOpen(id);
       setIsInterstitialOpen(true);
     }
   };
 
-  const handleProceedFromInterstitial = () => {
+  const handleProceedFromInterstitial = useCallback(() => {
+    console.log('[handleProceedFromInterstitial] Proceeding from interstitial to load board');
     setIsInterstitialOpen(false);
-    if (pendingBoardIdToOpen) {
-      const targetId = pendingBoardIdToOpen;
+    const targetId = pendingBoardIdRef.current || pendingBoardIdToOpen;
+    if (targetId) {
+      pendingBoardIdRef.current = null;
       setPendingBoardIdToOpen(null);
       void handleLoadBoard(targetId);
+    } else {
+      console.warn('[handleProceedFromInterstitial] No pending board ID found');
     }
-  };
+  }, [pendingBoardIdToOpen, handleLoadBoard]);
 
   const handleSuccessUpgrade = (updatedUser: User) => {
     setCurrentUser(updatedUser);

@@ -809,12 +809,26 @@ app.get('/api/boards', authMiddleware, (req: AuthRequest, res: Response) => {
 
 app.get('/api/boards/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
-  const board = database.prepare('SELECT id, subject, title, data, created_at, updated_at FROM boards WHERE id = ? AND user_id = ?').get(req.params.id, userId) as
+  const isAdmin = req.user?.role === 'admin';
+  const query = isAdmin
+    ? 'SELECT id, subject, title, data, created_at, updated_at FROM boards WHERE id = ?'
+    : 'SELECT id, subject, title, data, created_at, updated_at FROM boards WHERE id = ? AND (user_id = ? OR user_id IS NULL OR user_id = \'default-teacher-uuid\')';
+  const board = (isAdmin
+    ? database.prepare(query).get(req.params.id)
+    : database.prepare(query).get(req.params.id, userId)) as
     | { id: string; subject: string; title: string; data: string; created_at: string; updated_at: string }
     | undefined;
 
   if (!board) return res.status(404).json({ error: 'Доска не найдена' });
-  return res.json({ ...board, data: JSON.parse(board.data) });
+
+  let parsedData = {};
+  try {
+    parsedData = typeof board.data === 'string' ? JSON.parse(board.data) : board.data;
+  } catch (err) {
+    console.error('Failed to parse board data JSON:', err);
+    parsedData = {};
+  }
+  return res.json({ ...board, data: parsedData });
 });
 
 app.post('/api/boards', authMiddleware, (req: AuthRequest, res: Response) => {

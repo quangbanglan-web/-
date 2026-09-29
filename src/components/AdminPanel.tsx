@@ -79,6 +79,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   }, [isOpen, loadData]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (selectedUserForPro) {
+          setSelectedUserForPro(null);
+        } else {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, selectedUserForPro, onClose]);
+
   // Handle Search Input
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -189,7 +204,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/70 p-3 backdrop-blur-md animate-in fade-in duration-200 sm:p-6"
-      onPointerDown={(e) => {
+      onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
