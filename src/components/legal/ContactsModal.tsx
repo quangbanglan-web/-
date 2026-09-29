@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Mail, Phone, MapPin, Building, ShieldCheck, X, Check, HelpCircle } from 'lucide-react';
 
 interface ContactsModalProps {
@@ -7,12 +7,21 @@ interface ContactsModalProps {
 }
 
 export const ContactsModal: React.FC<ContactsModalProps> = ({ isOpen, onClose }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <div
       className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto bg-slate-950/70 p-3 backdrop-blur-md animate-in fade-in duration-200 sm:p-6"
-      onPointerDown={(e) => {
+      onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
@@ -35,7 +44,7 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({ isOpen, onClose })
           <button
             type="button"
             onClick={onClose}
-            title="Закрыть"
+            title="Закрыть (Esc)"
             className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-5 w-5" />
@@ -49,14 +58,14 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({ isOpen, onClose })
               <Building className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" />
               <div>
                 <span className="text-[11px] font-semibold text-slate-500">Исполнитель:</span>
-                <p className="font-bold text-slate-900 text-sm">Самозанятый Иванов Иван Иванович</p>
+                <p className="font-bold text-slate-900 text-sm">Самозанятый Вайнбергер Иван Юрьевич</p>
                 <p className="text-[11px] text-slate-500">Специальный налоговый режим НПД (ФЗ № 422-ФЗ)</p>
               </div>
             </div>
 
             <div className="flex items-center gap-2.5">
               <span className="text-xs font-bold text-slate-500">ИНН:</span>
-              <span className="font-mono text-sm font-bold text-slate-900">123456789012</span>
+              <span className="font-mono text-sm font-bold text-slate-900">66520743874</span>
             </div>
 
             <div className="flex items-start gap-2.5">
@@ -64,8 +73,8 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({ isOpen, onClose })
               <div>
                 <span className="text-[11px] font-semibold text-slate-500">Служба заботы и поддержки:</span>
                 <p className="font-bold text-emerald-800">
-                  <a href="mailto:support@doska-edu.ru" className="hover:underline">
-                    support@doska-edu.ru
+                  <a href="mailto:vainbergerivan0608@gmail.com" className="hover:underline">
+                    vainbergerivan0608@gmail.com
                   </a>
                 </p>
                 <p className="text-[11px] text-slate-500">Время ответа: до 24 часов (ежедневно)</p>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Lock, X, Check, ShieldCheck } from 'lucide-react';
 
 interface PrivacyModalProps {
@@ -7,12 +7,21 @@ interface PrivacyModalProps {
 }
 
 export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <div
       className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto bg-slate-950/70 p-3 backdrop-blur-md animate-in fade-in duration-200 sm:p-6"
-      onPointerDown={(e) => {
+      onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
@@ -35,7 +44,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) =
           <button
             type="button"
             onClick={onClose}
-            title="Закрыть"
+            title="Закрыть (Esc)"
             className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-5 w-5" />
@@ -47,7 +56,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) =
           <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3.5 text-[11px] text-blue-950">
             <p className="font-bold">Безопасность ваших данных — приоритет сервиса DOSKA:</p>
             <p className="mt-1">
-              Настоящая Политика регламентирует порядок обработки и обеспечения безопасности персональных данных пользователей сервиса «DOSKA»
+              Настоящая Политика регламентирует порядок обработки и обеспечения безопасности персональных данных пользователей сервиса «DOSKA» (интерактивная онлайн-доска для преподавателей)
               в строгом соответствии с требованиями Федерального закона от 27.07.2006 № 152-ФЗ «О персональных данных».
             </p>
           </div>
@@ -55,8 +64,8 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) =
           <section>
             <h3 className="text-sm font-bold text-slate-900">1. Оператор персональных данных</h3>
             <p className="mt-1">
-              1.1. Оператором персональных данных является Самозанятый гражданин Иванов Иван Иванович (ИНН: 123456789012,
-              email: support@doska-edu.ru).
+              1.1. Оператором персональных данных является Самозанятый гражданин Вайнбергер Иван Юрьевич (ИНН: 66520743874,
+              email: vainbergerivan0608@gmail.com).
             </p>
           </section>
 
@@ -106,7 +115,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) =
             <h3 className="text-sm font-bold text-slate-900">5. Права субъекта данных и удаление</h3>
             <p className="mt-1">
               5.1. Пользователь вправе в любой момент отозвать согласие на обработку персональных данных или запросить удаление своего аккаунта и досок,
-              направив письменный запрос на адрес электронной почты: <strong>support@doska-edu.ru</strong>. Запрос исполняется в течение 72 часов.
+              направив письменный запрос на адрес электронной почты: <strong>vainbergerivan0608@gmail.com</strong>. Запрос исполняется в течение 72 часов.
             </p>
           </section>
         </div>

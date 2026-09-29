@@ -48,6 +48,17 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     }
   }, [isOpen, currentUser]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isLoading && !isCanceling) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isLoading, isCanceling, onClose]);
+
   if (!isOpen) {
     return null;
   }
@@ -55,19 +66,18 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   const handleCheckout = async () => {
     setIsLoading(true);
     setErrorNotice(null);
-    setSuccessNotice('Переход к оплате через ЮKassa...');
+    setSuccessNotice('Подготовка к оплате...');
 
     try {
       const data = await createSubscriptionPayment();
       if (data.confirmation_url) {
         setSuccessNotice('Перенаправляем на защищенный шлюз ЮKassa...');
-        setTimeout(() => {
-          window.location.href = data.confirmation_url;
-        }, 300);
+        window.location.href = data.confirmation_url;
       } else {
-        throw new Error('Платежная ссылка не получена');
+        throw new Error('Платежная ссылка не получена от сервиса оплаты');
       }
     } catch (err: any) {
+      setSuccessNotice(null);
       setErrorNotice(err.message || 'Ошибка создания платежа в ЮKassa');
       setIsLoading(false);
     }
@@ -134,22 +144,29 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-center justify-center overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-md animate-in fade-in duration-200"
-      onPointerDown={(e) => {
+      className="fixed inset-0 z-[90] flex items-center justify-center overflow-y-auto bg-slate-950/70 p-3 sm:p-4 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={(e) => {
         if (e.target === e.currentTarget && !isLoading && !isCanceling) onClose();
       }}
     >
-      <div className="relative w-full max-w-lg rounded-2xl border border-amber-400/40 bg-white p-6 shadow-2xl sm:p-8">
-        {/* Close button */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative my-auto flex max-h-[90vh] w-full max-w-md flex-col rounded-2xl border border-amber-400/40 bg-white shadow-2xl overflow-hidden"
+      >
+        {/* Fixed/Sticky close button */}
         <button
           type="button"
           onClick={onClose}
           disabled={isLoading || isCanceling}
-          title="Закрыть"
-          className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+          title="Закрыть (Esc)"
+          className="absolute right-3.5 top-3.5 z-50 rounded-xl bg-white/90 p-2 text-slate-400 shadow-sm border border-slate-200/80 backdrop-blur-sm transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
         >
           <X className="h-5 w-5" />
         </button>
+
+        {/* Scrollable body content */}
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6">
 
         {/* Top badge & header */}
         <div className="text-center">
@@ -344,6 +361,19 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
             </div>
           </>
         )}
+        </div>
+
+        {/* Bottom bar with Cancel button */}
+        <div className="flex shrink-0 items-center justify-center border-t border-slate-100 bg-slate-50/90 px-6 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isLoading || isCanceling}
+            className="text-xs font-semibold text-slate-500 hover:text-slate-800 transition py-1 px-3 rounded-lg hover:bg-slate-200/60"
+          >
+            Отмена / Закрыть
+          </button>
+        </div>
       </div>
     </div>
   );
