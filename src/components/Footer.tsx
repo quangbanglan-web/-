@@ -72,7 +72,7 @@ export const Footer: React.FC<FooterProps> = ({
             <span className="font-mono">66520743874</span>
             <span className="text-slate-300 hidden md:inline">|</span>
             <span className="font-semibold text-slate-800">Email:</span>
-            <a href="mailto:support@doska-edu.ru" className="text-emerald-800 hover:underline font-medium">
+            <a href="mailto:vainbergerivan0608@gmail.com" className="text-emerald-800 hover:underline font-medium">
               vainbergerivan0608@gmail.com
             </a>
           </div>

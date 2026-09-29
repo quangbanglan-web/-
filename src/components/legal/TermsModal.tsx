@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { FileText, X, Check, ShieldCheck, AlertCircle } from 'lucide-react';
 
 interface TermsModalProps {
@@ -7,12 +7,21 @@ interface TermsModalProps {
 }
 
 export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <div
       className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto bg-slate-950/70 p-3 backdrop-blur-md animate-in fade-in duration-200 sm:p-6"
-      onPointerDown={(e) => {
+      onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
@@ -35,7 +44,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
           <button
             type="button"
             onClick={onClose}
-            title="Закрыть"
+            title="Закрыть (Esc)"
             className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-5 w-5" />
@@ -48,7 +57,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
             <p className="font-bold">Краткая информация о договоре:</p>
             <p className="mt-1">
               Настоящий документ является официальным предложением (публичной офертой в соответствии со ст. 437 ГК РФ)
-              Самозанятого гражданина Иванова Ивана Ивановича (плательщика НПД) заключить договор на предоставление
+              Самозанятого гражданина Вайнбергера Ивана Юрьевича (плательщика НПД) заключить договор на предоставление
               информационного онлайн-доступа к сервису интерактивной онлайн-доски «DOSKA» на условиях ежемесячной автоподписки за 99 руб./мес.
             </p>
           </div>
@@ -56,7 +65,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
           <section>
             <h3 className="text-sm font-bold text-slate-900">1. Термины и определения</h3>
             <p className="mt-1">
-              <strong>1.1. Исполнитель</strong> — Самозанятый гражданин Иванов Иван Иванович (ИНН: 123456789012),
+              <strong>1.1. Исполнитель</strong> — Самозанятый гражданин Вайнбергер Иван Юрьевич (ИНН: 66520743874),
               применяющий специальный налоговый режим «Налог на профессиональный доход» (ФЗ № 422-ФЗ).
             </p>
             <p className="mt-1">
@@ -116,7 +125,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
             <p className="mt-1">
               4.3. <strong>Порядок отказа от подписки (отмена автосписания):</strong> Заказчик вправе в любой момент отказаться от
               автоматического продления подписки. Для этого достаточно нажать кнопку «Отменить автосписание» в модальном окне
-              подписки / личном кабинете на сайте либо направить уведомление по электронной почте <strong>support@doska-edu.ru</strong>.
+              подписки / личном кабинете на сайте либо направить уведомление по электронной почте <strong>vainbergerivan0608@gmail.com</strong>.
             </p>
             <p className="mt-1">
               4.4. При отмене автопродления оплаченные средства за текущий период не сгорают, а функционал «DOSKA PRO» в полном объеме
@@ -136,18 +145,18 @@ export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
               которым была произведена оплата.
             </p>
             <p className="mt-1">
-              5.3. Для оформления возврата необходимо направить запрос на <strong>support@doska-edu.ru</strong> с указанием email аккаунта и даты списания.
+              5.3. Для оформления возврата необходимо направить запрос на <strong>vainbergerivan0608@gmail.com</strong> с указанием email аккаунта и даты списания.
             </p>
           </section>
 
           <section>
             <h3 className="text-sm font-bold text-slate-900">6. Реквизиты Исполнителя</h3>
             <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-800">
-              <p><strong>Исполнитель:</strong> Самозанятый Иванов Иван Иванович</p>
+              <p><strong>Исполнитель:</strong> Самозанятый Вайнбергер Иван Юрьевич</p>
               <p><strong>Статус:</strong> Плательщик налога на профессиональный доход (НПД)</p>
-              <p><strong>ИНН:</strong> 123456789012</p>
-              <p><strong>Электронная почта:</strong> support@doska-edu.ru</p>
-              <p><strong>Сайт сервиса:</strong> https://doska-edu.ru</p>
+              <p><strong>ИНН:</strong> 66520743874</p>
+              <p><strong>Электронная почта:</strong> vainbergerivan0608@gmail.com</p>
+              <p><strong>Сервис:</strong> DOSKA (интерактивная онлайн-доска для преподавателей)</p>
               <p><strong>Платёжный партнёр:</strong> ООО НКО «ЮМани» (ЮKassa), лицензия ЦБ РФ № 3510-К</p>
             </div>
           </section>
