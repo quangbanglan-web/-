@@ -20,7 +20,7 @@ const PORT = Number(process.env.PORT) || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'doska-super-secret-jwt-commercial-key-2026';
 const YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID || '';
 const YOOKASSA_SECRET_KEY = process.env.YOOKASSA_SECRET_KEY || '';
-const BASE_URL = (process.env.BASE_URL || process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+const BASE_URL = (process.env.BASE_URL || process.env.APP_URL || `http://2.58.124.58:${PORT}`).replace(/\/$/, '');
 const APP_URL = BASE_URL;
 
 app.use(express.json({ limit: '25mb' }));
@@ -83,13 +83,30 @@ database.exec(`
   CREATE TABLE IF NOT EXISTS payments (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    amount INTEGER NOT NULL DEFAULT 99,
-    status TEXT NOT NULL,
+    yookassa_payment_id TEXT UNIQUE,
+    amount REAL NOT NULL DEFAULT 99.00,
+    status TEXT NOT NULL DEFAULT 'pending',
     is_recurrent INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
 `);
+
+// Safe migration for payments table columns
+const paymentColumns = database.pragma('table_info(payments)') as Array<{ name: string }>;
+if (!paymentColumns.some((column) => column.name === 'yookassa_payment_id')) {
+  database.exec("ALTER TABLE payments ADD COLUMN yookassa_payment_id TEXT UNIQUE");
+}
+if (!paymentColumns.some((column) => column.name === 'updated_at')) {
+  database.exec("ALTER TABLE payments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP");
+}
+
+// Safe migration for users table columns
+const userColumns = database.pragma('table_info(users)') as Array<{ name: string }>;
+if (!userColumns.some((column) => column.name === 'pro_expires_at')) {
+  database.exec("ALTER TABLE users ADD COLUMN pro_expires_at DATETIME NULL");
+}
 
 // Safe migration for boards table columns
 const boardColumns = database.pragma('table_info(boards)') as Array<{ name: string }>;
@@ -99,6 +116,15 @@ if (!boardColumns.some((column) => column.name === 'subject')) {
 if (!boardColumns.some((column) => column.name === 'user_id')) {
   database.exec("ALTER TABLE boards ADD COLUMN user_id TEXT REFERENCES users(id)");
 }
+
+// Сброс просроченных PRO статусов при старте сервера
+database.prepare(`
+  UPDATE users
+  SET is_pro = 0
+  WHERE is_pro = 1
+    AND pro_expires_at IS NOT NULL
+    AND datetime(pro_expires_at) <= datetime('now')
+`).run();
 
 // Seed default teacher if no users exist to preserve existing standalone boards
 const existingUsersCount = (database.prepare('SELECT count(*) as count FROM users').get() as { count: number }).count;
@@ -228,6 +254,17 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as AuthenticatedUser;
     req.user = decoded;
+
+    // Проверка PRO: если срок истёк — сбрасывать is_pro = 0
+    database.prepare(`
+      UPDATE users
+      SET is_pro = 0
+      WHERE id = ?
+        AND is_pro = 1
+        AND pro_expires_at IS NOT NULL
+        AND datetime(pro_expires_at) <= datetime('now')
+    `).run(decoded.id);
+
     next();
   } catch {
     return res.status(401).json({ error: 'Недействительный или истекший токен авторизации' });

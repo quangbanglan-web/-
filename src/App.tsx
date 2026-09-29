@@ -179,29 +179,38 @@ export default function App() {
     };
   }, []);
 
-  // Handle return from YooKassa / sandbox payment
+  // Handle return from YooKassa payment (?payment=success)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const mockPaymentId = urlParams.get('mock_payment_id');
     const paymentStatus = urlParams.get('payment');
 
-    if (mockPaymentId || paymentStatus === 'success') {
+    if (paymentStatus === 'success' || mockPaymentId) {
       const finishPayment = async () => {
         if (mockPaymentId) {
           await confirmSandboxPayment(mockPaymentId, currentUser?.id);
         }
 
+        // Очистить query параметры из адресной строки чтобы при F5 не показывалось повторно
+        window.history.replaceState({}, '', window.location.pathname);
+
+        // Обновить данные текущего пользователя чтобы сразу отобразить PRO без перезагрузки
         const updated = await fetchCurrentUser();
         if (updated) {
           setCurrentUser(updated);
         }
 
-        const cleanUrl = new URL(window.location.href);
-        cleanUrl.searchParams.delete('mock_payment_id');
-        cleanUrl.searchParams.delete('payment');
-        window.history.replaceState({}, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+        // Дополнительная проверка на случай сетевой задержки вебхука ЮKassa
+        if (!updated?.is_pro) {
+          setTimeout(async () => {
+            const recheck = await fetchCurrentUser();
+            if (recheck?.is_pro) {
+              setCurrentUser(recheck);
+            }
+          }, 1500);
+        }
 
-        setBoardMessage('Подписка DOSKA PRO успешно оформлена! Доступ ко всем возможностям открыт.');
+        setBoardMessage('Оплата прошла успешно! PRO-аккаунт активирован на 30 дней.');
       };
 
       finishPayment();
