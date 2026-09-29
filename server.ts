@@ -402,6 +402,68 @@ app.get('/api/auth/me', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
+app.patch('/api/auth/profile', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { name, email, oldPassword, newPassword } = req.body ?? {};
+    const current = database.prepare(
+      'SELECT id, email, password_hash, name, role, is_pro, pro_expires_at, created_at FROM users WHERE id = ?'
+    ).get(userId) as {
+      id: string;
+      email: string;
+      password_hash: string;
+      name: string;
+      role: string;
+      is_pro: number;
+      pro_expires_at: string | null;
+      created_at: string;
+    } | undefined;
+    if (!current) return res.status(404).json({ error: 'Пользователь не найден' });
+
+    const updates: string[] = [];
+    const values: Array<string> = [];
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim() || name.trim().length > 80) {
+        return res.status(400).json({ error: 'Имя должно содержать от 1 до 80 символов' });
+      }
+      updates.push('name = ?');
+      values.push(name.trim());
+    }
+    if (email !== undefined) {
+      if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        return res.status(400).json({ error: 'Введите корректный email' });
+      }
+      updates.push('email = ?');
+      values.push(email.trim().toLowerCase());
+    }
+
+    if (newPassword !== undefined) {
+      if (typeof oldPassword !== 'string' || !oldPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+        return res.status(400).json({ error: 'Введите текущий пароль и новый пароль длиной не менее 6 символов' });
+      }
+      if (!(await bcrypt.compare(oldPassword, current.password_hash))) {
+        return res.status(403).json({ error: 'Текущий пароль указан неверно' });
+      }
+      updates.push('password_hash = ?');
+      values.push(await bcrypt.hash(newPassword, 10));
+    }
+    if (updates.length === 0) return res.status(400).json({ error: 'Нет данных для обновления' });
+
+    values.push(userId);
+    database.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+    const updated = database.prepare(
+      'SELECT id, email, name, role, is_pro, pro_expires_at, created_at FROM users WHERE id = ?'
+    ).get(userId);
+    return res.json({ user: updated });
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('UNIQUE constraint failed: users.email')) {
+      return res.status(409).json({ error: 'Пользователь с таким email уже зарегистрирован' });
+    }
+    console.error('Error in PATCH /api/auth/profile:', error);
+    return res.status(500).json({ error: 'Ошибка обновления профиля' });
+  }
+});
+
 // POST /api/auth/upgrade-pro — Активация PRO подписки
 app.post('/api/auth/upgrade-pro', authMiddleware, (req: AuthRequest, res: Response) => {
   try {

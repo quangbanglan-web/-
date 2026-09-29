@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Sliders, Sparkles, Check } from 'lucide-react';
-import { ThemeType } from '../types/board';
+import { BoardBackground, ThemeType } from '../types/board';
+import { User } from '../types/auth';
 import { SmoothingLevel } from '../utils/strokeSmoother';
 
 interface SettingsModalProps {
@@ -18,6 +19,10 @@ interface SettingsModalProps {
   onChangeSmoothingLevel: (level: SmoothingLevel) => void;
   snapShapes: boolean;
   onToggleSnapShapes: () => void;
+  boardBackground: BoardBackground;
+  onChangeBoardBackground: (background: BoardBackground) => void;
+  currentUser?: User | null;
+  onOpenSubscription?: () => void;
   onResetToolbarPos: () => void;
 }
 
@@ -36,11 +41,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onChangeSmoothingLevel,
   snapShapes,
   onToggleSnapShapes,
+  boardBackground,
+  onChangeBoardBackground,
+  currentUser,
+  onOpenSubscription,
   onResetToolbarPos,
 }) => {
   if (!isOpen) return null;
 
   const isDark = theme === 'chalkboard' || theme === 'blueprint';
+  const isPro = !!currentUser?.is_pro;
+  const backgrounds: Array<{ id: BoardBackground; label: string; description: string; pro?: boolean; color: string }> = [
+    { id: 'grid', label: 'В клетку', description: 'Тетрадный лист', color: '#f7f9fc' },
+    { id: 'ruled', label: 'В линейку', description: 'Русский язык и литература', pro: true, color: '#f7fbff' },
+    { id: 'mm', label: 'Миллиметровка', description: 'Инженерная сетка', color: '#f7f9fc' },
+    { id: 'clean', label: 'Чистый лист', description: 'Без разметки', color: '#ffffff' },
+    { id: 'map-world', label: 'Карта мира', description: 'Контурная карта', pro: true, color: '#eff6f8' },
+    { id: 'map-russia', label: 'Карта РФ', description: 'Контурная карта', pro: true, color: '#eff6f8' },
+  ];
 
   return (
     <div
@@ -73,6 +91,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="p-5 flex flex-col gap-5 overflow-y-auto">
+          <div>
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-2">
+              Фон текущей доски:
+            </label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {backgrounds.map((background) => {
+                const locked = !!background.pro && !isPro;
+                return (
+                  <button
+                    key={background.id}
+                    onClick={() => locked ? onOpenSubscription?.() : onChangeBoardBackground(background.id)}
+                    className={`relative flex min-h-14 items-center gap-2 rounded-lg border p-2 text-left transition ${
+                      boardBackground === background.id ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700'
+                    } ${locked ? 'opacity-70' : 'hover:border-blue-300'}`}
+                  >
+                    <span className="h-8 w-8 shrink-0 border border-slate-300" style={{ backgroundColor: background.color, backgroundImage: background.id === 'grid' ? 'linear-gradient(#c8d6ed 1px, transparent 1px), linear-gradient(90deg, #c8d6ed 1px, transparent 1px)' : undefined, backgroundSize: '8px 8px' }} />
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-bold">{background.label}</span>
+                      <span className="block truncate text-[10px] text-slate-400">{background.description}</span>
+                    </span>
+                    {locked && <span className="absolute right-1.5 top-1.5 text-[9px] font-black text-amber-600">PRO</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* 1. Theme selector (Unified here) */}
           <div>
             <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-2">

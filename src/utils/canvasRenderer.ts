@@ -1,4 +1,4 @@
-import { Stroke, LaserPoint, ThemeType, GraphPlot, ToolType } from '../types/board';
+import { Stroke, LaserPoint, ThemeType, GraphPlot, ToolType, BoardBackground } from '../types/board';
 
 export interface Viewport {
   pan: { x: number; y: number };
@@ -139,6 +139,98 @@ export function drawInfiniteGrid(
     }
   }
 
+  ctx.restore();
+}
+
+export function drawBoardBackground(
+  ctx: CanvasRenderingContext2D,
+  viewport: Viewport,
+  background: BoardBackground,
+  baseCellSize = 32
+) {
+  if (background === 'grid' || background === 'clean') {
+    drawInfiniteGrid(ctx, viewport, background === 'grid' ? 'notebook' : 'clean', baseCellSize);
+    return;
+  }
+  if (background === 'chalkboard' || background === 'blueprint') {
+    drawInfiniteGrid(ctx, viewport, background, baseCellSize);
+    return;
+  }
+
+  const { pan, zoom, width, height } = viewport;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.save();
+
+  if (background === 'ruled' || background === 'mm') {
+    const spacing = (background === 'ruled' ? baseCellSize * 1.5 : baseCellSize / 4) * zoom;
+    const originY = (pan.y * zoom) % spacing;
+    const originX = (pan.x * zoom) % spacing;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = background === 'ruled' ? '#b8d5ee' : '#e5b6b6';
+    ctx.beginPath();
+    for (let y = originY; y < height; y += spacing) {
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+    }
+    if (background === 'mm') {
+      ctx.strokeStyle = '#d8dfe7';
+      for (let x = originX; x < width; x += spacing) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+      }
+    }
+    ctx.stroke();
+    if (background === 'ruled') {
+      const marginX = (pan.x * zoom) % (baseCellSize * 8 * zoom);
+      ctx.strokeStyle = '#ef9a9a';
+      ctx.beginPath();
+      ctx.moveTo(marginX, 0);
+      ctx.lineTo(marginX, height);
+      ctx.stroke();
+    } else {
+      const majorSpacing = baseCellSize * zoom;
+      ctx.strokeStyle = '#9cb7d1';
+      ctx.beginPath();
+      for (let x = (pan.x * zoom) % majorSpacing; x < width; x += majorSpacing) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+      }
+      for (let y = (pan.y * zoom) % majorSpacing; y < height; y += majorSpacing) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+      }
+      ctx.stroke();
+    }
+  } else {
+    ctx.fillStyle = '#eff6f8';
+    ctx.fillRect(0, 0, width, height);
+    const world = background === 'map-world';
+    const continents = world
+      ? [
+          [[0.12, 0.18], [0.25, 0.12], [0.33, 0.2], [0.29, 0.34], [0.24, 0.43], [0.2, 0.58], [0.14, 0.42]],
+          [[0.3, 0.51], [0.38, 0.55], [0.41, 0.72], [0.37, 0.9], [0.32, 0.75]],
+          [[0.48, 0.22], [0.59, 0.16], [0.64, 0.28], [0.59, 0.4], [0.53, 0.38]],
+          [[0.6, 0.19], [0.77, 0.16], [0.9, 0.29], [0.83, 0.43], [0.69, 0.4], [0.62, 0.31]],
+          [[0.7, 0.48], [0.8, 0.47], [0.84, 0.61], [0.77, 0.72], [0.72, 0.62]],
+        ]
+      : [[[0.2, 0.12], [0.72, 0.14], [0.87, 0.34], [0.79, 0.53], [0.65, 0.49], [0.57, 0.67], [0.39, 0.57], [0.25, 0.4]]];
+    ctx.strokeStyle = '#647f88';
+    ctx.fillStyle = '#dce8d7';
+    ctx.lineWidth = 1.5;
+    for (const polygon of continents) {
+      ctx.beginPath();
+      polygon.forEach(([x, y], index) => {
+        const px = x * width;
+        const py = y * height;
+        if (index === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
   ctx.restore();
 }
 
@@ -394,7 +486,246 @@ export function drawStroke(
     return;
   }
 
-  // 9. Freehand Pen / Highlighter with natural smooth bezier curves
+  // 9. Trapezoid (isosceles)
+  if (stroke.tool === 'trapezoid') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      const w = Math.abs(p2.x - p1.x);
+      const h = Math.abs(p2.y - p1.y);
+      const lx = Math.min(p1.x, p2.x);
+      const ty = Math.min(p1.y, p2.y);
+      const by = ty + h;
+      const inset = w * 0.2;
+      ctx.lineWidth = stroke.width * zoom;
+      ctx.beginPath();
+      ctx.moveTo(lx + inset, ty);
+      ctx.lineTo(lx + w - inset, ty);
+      ctx.lineTo(lx + w, by);
+      ctx.lineTo(lx, by);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // 10. Right Trapezoid
+  if (stroke.tool === 'right-trapezoid') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      const w = Math.abs(p2.x - p1.x);
+      const h = Math.abs(p2.y - p1.y);
+      const lx = Math.min(p1.x, p2.x);
+      const ty = Math.min(p1.y, p2.y);
+      const by = ty + h;
+      ctx.lineWidth = stroke.width * zoom;
+      ctx.beginPath();
+      ctx.moveTo(lx, ty);
+      ctx.lineTo(lx + w * 0.6, ty);
+      ctx.lineTo(lx + w, by);
+      ctx.lineTo(lx, by);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // 11. Parallelogram
+  if (stroke.tool === 'parallelogram') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      const w = Math.abs(p2.x - p1.x);
+      const h = Math.abs(p2.y - p1.y);
+      const lx = Math.min(p1.x, p2.x);
+      const ty = Math.min(p1.y, p2.y);
+      const by = ty + h;
+      const shiftX = w * 0.25;
+      ctx.lineWidth = stroke.width * zoom;
+      ctx.beginPath();
+      ctx.moveTo(lx + shiftX, ty);
+      ctx.lineTo(lx + w, ty);
+      ctx.lineTo(lx + w - shiftX, by);
+      ctx.lineTo(lx, by);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // 12. Rhombus
+  if (stroke.tool === 'rhombus') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      const cx = (p1.x + p2.x) / 2;
+      const cy = (p1.y + p2.y) / 2;
+      const hw = Math.abs(p2.x - p1.x) / 2;
+      const hh = Math.abs(p2.y - p1.y) / 2;
+      ctx.lineWidth = stroke.width * zoom;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - hh);
+      ctx.lineTo(cx + hw, cy);
+      ctx.lineTo(cx, cy + hh);
+      ctx.lineTo(cx - hw, cy);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // 13. 3D Rectangular Box (wireframe with dashed hidden lines)
+  if (stroke.tool === 'box3d') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      const w = Math.abs(p2.x - p1.x);
+      const h = Math.abs(p2.y - p1.y);
+      const lx = Math.min(p1.x, p2.x);
+      const ty = Math.min(p1.y, p2.y);
+      const rx = lx + w;
+      const by = ty + h;
+      const depth = Math.min(w, h) * 0.35;
+      const ox = depth * 0.7;
+      const oy = -depth * 0.5;
+      ctx.lineWidth = stroke.width * zoom;
+
+      // Front face
+      ctx.beginPath();
+      ctx.rect(lx, ty, w, h);
+      ctx.stroke();
+
+      // Top face edges
+      ctx.beginPath();
+      ctx.moveTo(lx, ty);
+      ctx.lineTo(lx + ox, ty + oy);
+      ctx.lineTo(rx + ox, ty + oy);
+      ctx.lineTo(rx, ty);
+      ctx.stroke();
+
+      // Right face edge
+      ctx.beginPath();
+      ctx.moveTo(rx, ty);
+      ctx.lineTo(rx + ox, ty + oy);
+      ctx.lineTo(rx + ox, by + oy);
+      ctx.lineTo(rx, by);
+      ctx.stroke();
+
+      // Dashed hidden lines
+      ctx.setLineDash([5 * zoom, 4 * zoom]);
+      ctx.beginPath();
+      ctx.moveTo(lx, by);
+      ctx.lineTo(lx + ox, by + oy);
+      ctx.lineTo(rx + ox, by + oy);
+      ctx.moveTo(lx + ox, ty + oy);
+      ctx.lineTo(lx + ox, by + oy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+    return;
+  }
+
+  // 14. 3D Cylinder
+  if (stroke.tool === 'cylinder3d') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      const w = Math.abs(p2.x - p1.x);
+      const h = Math.abs(p2.y - p1.y);
+      const lx = Math.min(p1.x, p2.x);
+      const ty = Math.min(p1.y, p2.y);
+      const cx = lx + w / 2;
+      const rx = w / 2;
+      const ry = Math.max(w * 0.15, 10 * zoom);
+      ctx.lineWidth = stroke.width * zoom;
+
+      // Top ellipse
+      ctx.beginPath();
+      ctx.ellipse(cx, ty + ry, rx, ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Side lines
+      ctx.beginPath();
+      ctx.moveTo(lx, ty + ry);
+      ctx.lineTo(lx, ty + h);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(lx + w, ty + ry);
+      ctx.lineTo(lx + w, ty + h);
+      ctx.stroke();
+
+      // Bottom ellipse (solid)
+      ctx.beginPath();
+      ctx.ellipse(cx, ty + h, rx, ry, 0, 0, Math.PI);
+      ctx.stroke();
+
+      // Bottom dashed arc (hidden)
+      ctx.setLineDash([5 * zoom, 4 * zoom]);
+      ctx.beginPath();
+      ctx.ellipse(cx, ty + h, rx, ry, 0, Math.PI, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+    return;
+  }
+
+  // 15. 3D Pyramid (square base)
+  if (stroke.tool === 'pyramid3d') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      const w = Math.abs(p2.x - p1.x);
+      const h = Math.abs(p2.y - p1.y);
+      const lx = Math.min(p1.x, p2.x);
+      const ty = Math.min(p1.y, p2.y);
+      const by = ty + h;
+      const rx = lx + w;
+      const apex = { x: lx + w / 2, y: ty };
+      ctx.lineWidth = stroke.width * zoom;
+
+      // Front edges (apex to base corners)
+      ctx.beginPath();
+      ctx.moveTo(apex.x, apex.y);
+      ctx.lineTo(lx, by);
+      ctx.moveTo(apex.x, apex.y);
+      ctx.lineTo(rx, by);
+      ctx.stroke();
+
+      // Base visible edges
+      ctx.beginPath();
+      ctx.moveTo(lx, by);
+      ctx.lineTo(rx, by);
+      ctx.stroke();
+
+      // Hidden base edges (dashed)
+      const depth = w * 0.3;
+      const bx = lx + w / 4;
+      const bbx = rx - w / 4;
+      const bay = by - depth * 0.4;
+
+      ctx.setLineDash([5 * zoom, 4 * zoom]);
+      ctx.beginPath();
+      ctx.moveTo(lx, by);
+      ctx.lineTo(bx, bay);
+      ctx.lineTo(bbx, bay);
+      ctx.lineTo(rx, by);
+      ctx.moveTo(bx, bay);
+      ctx.lineTo(apex.x, apex.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+    return;
+  }
+
+  // 16. Freehand Pen / Highlighter with natural smooth bezier curves
   if (pts.length === 1) {
     ctx.fillStyle = stroke.color;
     ctx.beginPath();

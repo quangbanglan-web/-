@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#eff6ff"/>
+  <path d="M0 430h1200M0 510h1200M130 0v630M210 0v630" stroke="#c8d6ed" stroke-width="2"/>
+  <rect x="760" y="95" width="315" height="390" rx="18" fill="#fff" stroke="#2563eb" stroke-width="12"/>
+  <path d="M820 175h190M820 235h190M820 295h128" stroke="#bfdbfe" stroke-width="12" stroke-linecap="round"/>
+  <path d="m905 380 85-85 40 40-85 85-52 12z" fill="#f59e0b" stroke="#1e3a8a" stroke-width="9" stroke-linejoin="round"/>
+  <text x="105" y="270" fill="#172554" font-family="sans-serif" font-size="94" font-weight="800">DOSKA</text>
+  <text x="110" y="350" fill="#334155" font-family="sans-serif" font-size="34">Интерактивная онлайн-доска</text>
+</svg>

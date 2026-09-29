@@ -11,7 +11,26 @@ export type ToolType =
   | 'right-triangle'
   | 'axes'
   | 'laser'
-  | 'pan';
+  | 'pan'
+  // PRO shapes
+  | 'trapezoid'
+  | 'right-trapezoid'
+  | 'parallelogram'
+  | 'rhombus'
+  | 'box3d'
+  | 'cylinder3d'
+  | 'pyramid3d';
+
+export type BoardBackground =
+  | 'grid'
+  | 'ruled'
+  | 'mm'
+  | 'clean'
+  | 'chalkboard'
+  | 'blueprint'
+  | 'map-world'
+  | 'map-russia';
+
 
 export interface Point {
   x: number;
@@ -81,6 +100,7 @@ export interface PageData {
   graphs: GraphPlot[];
   pan: { x: number; y: number };
   zoom: number;
+  background?: BoardBackground;
 }
 
 export interface ToolbarCustomization {

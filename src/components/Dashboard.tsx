@@ -15,6 +15,7 @@ import {
   Pencil,
   Plus,
   Shapes,
+  Settings,
   Shield,
   Sparkles,
   Trash2,
@@ -57,6 +58,7 @@ interface DashboardProps {
   onOpenTerms?: () => void;
   onOpenPrivacy?: () => void;
   onOpenContacts?: () => void;
+  onOpenAccountSettings?: () => void;
 }
 
 const subjectIcons = [Calculator, Atom, Code2, Map, Landmark, Compass, Shapes];
@@ -112,6 +114,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onOpenTerms,
   onOpenPrivacy,
   onOpenContacts,
+  onOpenAccountSettings,
 }) => {
   const [newSubjectName, setNewSubjectName] = useState('');
   const [subjectError, setSubjectError] = useState('');
@@ -217,6 +220,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 )}
               </div>
 
+              {onOpenAccountSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenAccountSettings}
+                  title="Настройки аккаунта"
+                  className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-700 hover:text-emerald-800"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+              )}
+
               {/* Admin Panel Button (only if user.role === 'admin') */}
               {currentUser.role === 'admin' && onOpenAdmin && (
                 <button
@@ -311,7 +325,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-emerald-800 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:ring-offset-2"
               >
                 <FilePlus2 className="h-4 w-4" />
-                <span>Создать новый урок</span>
+                <span>Новая доска</span>
               </button>
             </div>
             {actionError && <p role="alert" className="mb-4 text-sm text-rose-700">{actionError}</p>}
@@ -383,7 +397,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <BookOpen className="h-5 w-5" />
                 </span>
                 <h3 className="text-base font-bold">Пока нет досок по предмету «{selectedSubject?.label}»</h3>
-                <p className="mt-1 max-w-sm text-sm text-slate-500">Создайте первый урок. Доска появится здесь после сохранения.</p>
+                <p className="mt-1 max-w-sm text-sm text-slate-500">Создайте первую доску. Она появится здесь после сохранения.</p>
                 <button onClick={onCreateBoard} className="mt-5 inline-flex items-center gap-2 rounded-md border border-emerald-800 px-3.5 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-50">
                   <Plus className="h-4 w-4" /> Создать доску
                 </button>

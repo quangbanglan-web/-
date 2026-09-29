@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  ChevronDown,
   Maximize,
   Minimize,
   Pencil,
@@ -13,12 +14,14 @@ import {
   RotateCcw,
   Save,
   Settings,
+  Share2,
   Trash2,
   LoaderCircle,
 } from 'lucide-react';
 import { PageData, ThemeType } from '../types/board';
 
 export type BoardSaveStatus = 'saved' | 'saving' | 'unsaved' | 'error';
+export type ExportFormat = 'jpeg-low' | 'jpeg-medium' | 'png-ultra' | 'pdf' | 'svg';
 
 interface BoardHeaderProps {
   subjectLabel: string;
@@ -40,7 +43,10 @@ interface BoardHeaderProps {
   onResetZoom: () => void;
   onOpenSettings: () => void;
   onClearPage: () => void;
-  onExportPNG: () => void;
+  onExport: (format: ExportFormat) => void;
+  onShare: () => void;
+  isPro: boolean;
+  onOpenSubscription: () => void;
   onToggleFullscreen: () => void;
 }
 
@@ -71,12 +77,16 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
   onResetZoom,
   onOpenSettings,
   onClearPage,
-  onExportPNG,
+  onExport,
+  onShare,
+  isPro,
+  onOpenSubscription,
   onToggleFullscreen,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(title);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const isDark = theme === 'chalkboard' || theme === 'blueprint';
   const currentIndex = Math.max(0, pages.findIndex((page) => page.id === currentPageId));
   const currentPage = pages[currentIndex];
@@ -180,7 +190,30 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
               </div>
             )}
           </div>
-          <button onClick={onExportPNG} title="Экспорт PNG" className={buttonClass}><Download className="h-4 w-4" /></button>
+          <button onClick={onShare} title="Поделиться уроком" className={buttonClass}><Share2 className="h-4 w-4" /></button>
+          <div className="relative">
+            <button onClick={() => setShowExportMenu((open) => !open)} title="Экспорт" aria-expanded={showExportMenu} className={buttonClass}><Download className="h-4 w-4" /><ChevronDown className="h-3 w-3" /></button>
+            {showExportMenu && (
+              <div className={`absolute right-0 top-full z-40 mt-2 w-52 rounded-lg border p-1 shadow-xl ${isDark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+                <button onClick={() => { onExport('jpeg-low'); setShowExportMenu(false); }} className="w-full rounded-md px-3 py-2 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800">JPEG · низкое качество</button>
+                <button onClick={() => { onExport('jpeg-medium'); setShowExportMenu(false); }} className="w-full rounded-md px-3 py-2 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800">JPEG · среднее качество</button>
+                {(['png-ultra', 'pdf', 'svg'] as const).map((format) => (
+                  <button
+                    key={format}
+                    onClick={() => {
+                      setShowExportMenu(false);
+                      if (isPro) onExport(format);
+                      else onOpenSubscription();
+                    }}
+                    className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    <span>{format === 'png-ultra' ? 'PNG Ultra-HD' : format.toUpperCase() + (format === 'pdf' ? ' · весь урок' : '')}</span>
+                    {!isPro && <span className="text-[9px] font-black text-amber-600">PRO</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button onClick={onToggleFullscreen} title={isFullscreen ? 'Выйти из полного экрана' : 'На весь экран'} className={buttonClass}>{isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}</button>
         </div>
       </div>

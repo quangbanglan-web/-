@@ -8,11 +8,13 @@ import {
   ThemeType,
   PageData,
   Point,
+  BoardBackground,
   SubjectMode,
   ToolbarCustomization,
 } from './types/board';
 import {
   drawInfiniteGrid,
+  drawBoardBackground,
   drawStroke,
   drawLaserTrail,
   drawGraphPlot,
@@ -24,7 +26,7 @@ import {
   SmoothingLevel,
 } from './utils/strokeSmoother';
 import { Dashboard, DashboardBoard, DashboardSubject } from './components/Dashboard';
-import { BoardHeader, BoardSaveStatus } from './components/BoardHeader';
+import { BoardHeader, BoardSaveStatus, ExportFormat } from './components/BoardHeader';
 import { Toolbar } from './components/Toolbar';
 import { VirtualRuler, VirtualProtractor } from './components/VirtualInstruments';
 import { QuickMathModal } from './components/QuickMathModal';
@@ -39,6 +41,9 @@ import { AdminPanel } from './components/AdminPanel';
 import { TermsModal } from './components/legal/TermsModal';
 import { PrivacyModal } from './components/legal/PrivacyModal';
 import { ContactsModal } from './components/legal/ContactsModal';
+import { MathCard } from './components/MathCard';
+import { CreateBoardModal } from './components/CreateBoardModal';
+import { AccountSettingsModal } from './components/AccountSettingsModal';
 import { User } from './types/auth';
 import { authFetch, fetchCurrentUser, getStoredToken, removeStoredToken } from './utils/auth';
 import { confirmSandboxPayment } from './utils/payment';
@@ -104,6 +109,80 @@ const createAutoTitle = (subjectLabel: string) => {
     minute: '2-digit',
   }).format(new Date()).replace(',', '');
   return `${subjectLabel} — Урок от ${timestamp}`;
+};
+
+const isPointNearStroke = (stroke: Stroke, point: Point, radius: number) => {
+  const points = stroke.points;
+  if (!points.length) return false;
+  const tool = stroke.tool;
+  const shapeTools = ['line', 'dashed-line', 'arrow', 'rect', 'circle', 'triangle', 'right-triangle', 'axes',
+    'trapezoid', 'right-trapezoid', 'parallelogram', 'rhombus', 'box3d', 'cylinder3d', 'pyramid3d'];
+
+  const distanceToSegment = (start: Point, end: Point) => {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const t = lengthSquared ? Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared)) : 0;
+    return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
+  };
+
+  let paths: Point[][] = [points];
+  if (shapeTools.includes(tool) && points.length >= 2) {
+    const [start, end] = [points[0], points[points.length - 1]];
+    const left = Math.min(start.x, end.x);
+    const right = Math.max(start.x, end.x);
+    const top = Math.min(start.y, end.y);
+    const bottom = Math.max(start.y, end.y);
+    const width = right - left;
+    const height = bottom - top;
+    if (tool === 'line' || tool === 'dashed-line' || tool === 'arrow' || tool === 'axes') paths = [[start, end]];
+    else if (tool === 'circle' || tool === 'cylinder3d') {
+      const ellipse = (cy: number, rx = width / 2, ry = height / 2) => Array.from({ length: 33 }, (_, index) => {
+        const angle = (index / 32) * Math.PI * 2;
+        return { x: (left + right) / 2 + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry };
+      });
+      paths = tool === 'circle'
+        ? [ellipse((top + bottom) / 2)]
+        : [ellipse(top + height * 0.16, width / 2, height * 0.16), ellipse(bottom - height * 0.16, width / 2, height * 0.16), [{ x: left, y: top + height * 0.16 }, { x: left, y: bottom - height * 0.16 }], [{ x: right, y: top + height * 0.16 }, { x: right, y: bottom - height * 0.16 }]];
+    } else if (tool === 'rect') paths = [[{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }, { x: left, y: top }]];
+    else if (tool === 'triangle') paths = [[{ x: (left + right) / 2, y: top }, { x: right, y: bottom }, { x: left, y: bottom }, { x: (left + right) / 2, y: top }]];
+    else if (tool === 'right-triangle') paths = [[{ x: left, y: top }, { x: right, y: bottom }, { x: left, y: bottom }, { x: left, y: top }]];
+    else if (tool === 'trapezoid' || tool === 'right-trapezoid' || tool === 'parallelogram' || tool === 'rhombus') {
+      const inset = width * 0.2;
+      const outline = tool === 'trapezoid'
+        ? [{ x: left + inset, y: top }, { x: right - inset, y: top }, { x: right, y: bottom }, { x: left, y: bottom }]
+        : tool === 'right-trapezoid'
+          ? [{ x: left, y: top }, { x: right - inset, y: top }, { x: right, y: bottom }, { x: left, y: bottom }]
+          : tool === 'parallelogram'
+            ? [{ x: left + inset, y: top }, { x: right, y: top }, { x: right - inset, y: bottom }, { x: left, y: bottom }]
+            : [{ x: (left + right) / 2, y: top }, { x: right, y: (top + bottom) / 2 }, { x: (left + right) / 2, y: bottom }, { x: left, y: (top + bottom) / 2 }];
+      paths = [[...outline, outline[0]]];
+    } else if (tool === 'box3d') {
+      const dx = width * 0.25;
+      const dy = height * 0.2;
+      const a = { x: left + dx, y: top };
+      const b = { x: right, y: top };
+      const c = { x: right, y: bottom - dy };
+      const d = { x: left + dx, y: bottom - dy };
+      const e = { x: left, y: top + dy };
+      const f = { x: right - dx, y: top + dy };
+      const g = { x: right - dx, y: bottom };
+      const h = { x: left, y: bottom };
+      paths = [[a, b, c, d, a], [e, f, g, h, e], [a, e], [b, f], [c, g], [d, h]];
+    } else if (tool === 'pyramid3d') {
+      const apex = { x: (left + right) / 2, y: top };
+      const base = [{ x: left, y: bottom }, { x: right, y: bottom }, { x: right - width * 0.2, y: bottom - height * 0.2 }, { x: left + width * 0.2, y: bottom - height * 0.2 }];
+      paths = [[...base, base[0]], [apex, base[0]], [apex, base[1]], [apex, base[2]], [apex, base[3]]];
+    }
+  }
+
+  return paths.some((path) => {
+    if (path.length === 1) return Math.hypot(path[0].x - point.x, path[0].y - point.y) <= radius;
+    for (let index = 1; index < path.length; index++) {
+      if (distanceToSegment(path[index - 1], path[index]) <= radius) return true;
+    }
+    return false;
+  });
 };
 
 export default function App() {
@@ -372,6 +451,8 @@ export default function App() {
   const [isGraphPlotOpen, setIsGraphPlotOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isToolbarCustomizerOpen, setIsToolbarCustomizerOpen] = useState(false);
+  const [isCreateBoardOpen, setIsCreateBoardOpen] = useState(false);
+  const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Live drawing tracking
@@ -399,6 +480,7 @@ export default function App() {
         graphs?: GraphPlot[];
         pan?: { x: number; y: number };
         zoom?: number;
+        background?: BoardBackground;
       }
     ) => {
       markDirty();
@@ -448,7 +530,7 @@ export default function App() {
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   };
 
-  const makeEmptyPage = (mode: SubjectMode): PageData => ({
+  const makeEmptyPage = (mode: SubjectMode, background: BoardBackground = 'grid'): PageData => ({
     id: `${mode}-page-${generateId()}`,
     title: 'Лист 1',
     strokes: [],
@@ -456,6 +538,7 @@ export default function App() {
     graphs: [],
     pan: { x: window.innerWidth / 3, y: 150 },
     zoom: 1,
+    background,
   });
 
   const labelForSubject = (id: string) => subjects.find((subject) => subject.id === id)?.label || id;
@@ -508,7 +591,7 @@ export default function App() {
       setZoom(restoredPage.zoom || 1);
       setUndoStack([]);
       setRedoStack([]);
-      setActiveBoard({ id: board.id, subject: board.subject || 'math', title: board.title || 'Новый урок' });
+      setActiveBoard({ id: board.id, subject: board.subject || 'math', title: board.title || 'Новая доска' });
       setSelectedSubjectId(board.subject || 'math');
       setSubjects((existing) => existing.some((subject) => subject.id === board.subject)
         ? existing
@@ -531,7 +614,7 @@ export default function App() {
       setZoom(1);
       setUndoStack([]);
       setRedoStack([]);
-      setActiveBoard({ id: board.id, subject: board.subject || 'math', title: board.title || 'Новый урок' });
+      setActiveBoard({ id: board.id, subject: board.subject || 'math', title: board.title || 'Новая доска' });
       dirtyRef.current = false;
       setSaveStatus('saved');
       setBoardUrl(board.id);
@@ -757,7 +840,11 @@ export default function App() {
 
       try {
         // 1. Draw Infinite Squared Grid (or pure white)
-        drawInfiniteGrid(ctx, viewport, theme, baseCellSize);
+        if (currentPage.background) {
+          drawBoardBackground(ctx, viewport, currentPage.background, baseCellSize);
+        } else {
+          drawInfiniteGrid(ctx, viewport, theme, baseCellSize);
+        }
 
         // 2. Draw Math Function Plots (Algebra)
         if (Array.isArray(currentPage?.graphs)) {
@@ -805,6 +892,7 @@ export default function App() {
     pan,
     zoom,
     theme,
+    currentPage.background,
     baseCellSize,
     currentPage.strokes,
     currentPage.graphs,
@@ -822,23 +910,30 @@ export default function App() {
     return () => clearInterval(interval);
   }, [laserPoints.length]);
 
-  // Erase strokes intersecting target point
+  // Erase strokes intersecting target point (object erasing for shapes)
   const eraseAtPoint = (worldPt: Point) => {
     const eraseRadius = 18 / zoom;
-    const survivingStrokes = currentPage.strokes.filter((stroke) => {
-      return !stroke.points.some(
-        (p) => Math.hypot(p.x - worldPt.x, p.y - worldPt.y) < eraseRadius
-      );
-    });
 
-    if (survivingStrokes.length !== currentPage.strokes.length) {
+    const survivingStrokes = currentPage.strokes.filter(
+      (stroke) => !isPointNearStroke(stroke, worldPt, eraseRadius + stroke.width / 2)
+    );
+
+    const survivingMath = currentPage.mathElements.filter((el) =>
+      Math.hypot(el.x - worldPt.x, el.y - worldPt.y) >= eraseRadius * 4
+    );
+
+    if (
+      survivingStrokes.length !== currentPage.strokes.length ||
+      survivingMath.length !== currentPage.mathElements.length
+    ) {
       updateCurrentPage(() => ({
         strokes: survivingStrokes,
+        mathElements: survivingMath,
       }));
     }
   };
 
-  // Pointer Event Handlers (Real-time stabilization & smoothing)
+  // Pointer Event Handlers (Real-time stabilization & smoothing + stylus pressure)
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const isPen = e.pointerType === 'pen';
     const isTouch = e.pointerType === 'touch';
@@ -871,12 +966,12 @@ export default function App() {
 
     if (e.button !== 0 && !isTouch && !isPen) return;
 
-    const isShape = ['line', 'dashed-line', 'arrow', 'rect', 'circle', 'triangle', 'right-triangle', 'axes'].includes(currentTool);
+    const proShapes = ['trapezoid', 'right-trapezoid', 'parallelogram', 'rhombus', 'box3d', 'cylinder3d', 'pyramid3d'];
+    const isShape = ['line', 'dashed-line', 'arrow', 'rect', 'circle', 'triangle', 'right-triangle', 'axes', ...proShapes].includes(currentTool);
     const worldPt = screenToWorld(e.clientX, e.clientY, isShape);
-    const pressure = e.pressure && e.pressure > 0 ? e.pressure : 0.5;
-    const ptWithPressure = { ...worldPt, pressure, timestamp: Date.now() };
+    const rawPressure = e.pressure && e.pressure > 0 ? e.pressure : 0.5;
+    const ptWithPressure = { ...worldPt, pressure: rawPressure, timestamp: Date.now() };
 
-    // Laser pointer tool
     if (currentTool === 'laser') {
       setLaserPoints((prev) => [
         ...prev,
@@ -885,20 +980,23 @@ export default function App() {
       return;
     }
 
-    // Eraser tool
     if (currentTool === 'eraser') {
       pushUndoState();
       eraseAtPoint(worldPt);
       return;
     }
 
-    // Pen, Highlighter, and Shapes
+    // Dynamic width for stylus pressure sensitivity
+    const dynamicWidth = isPen
+      ? strokeWidth * (0.25 + 0.75 * (rawPressure || 0.5))
+      : currentTool === 'highlighter' ? 18 : strokeWidth;
+
     pushUndoState();
     setCurrentStroke({
       id: `stroke-${Date.now()}`,
       tool: currentTool,
       color: currentTool === 'highlighter' ? '#facc15' : color,
-      width: currentTool === 'highlighter' ? 18 : strokeWidth,
+      width: dynamicWidth,
       opacity: currentTool === 'highlighter' ? 0.35 : 1,
       points: [ptWithPressure],
     });
@@ -944,7 +1042,8 @@ export default function App() {
       return;
     }
 
-    const isShape = currentStroke && ['line', 'dashed-line', 'arrow', 'rect', 'circle', 'triangle', 'right-triangle', 'axes'].includes(currentStroke.tool);
+    const isShape = currentStroke && ['line', 'dashed-line', 'arrow', 'rect', 'circle', 'triangle', 'right-triangle', 'axes',
+      'trapezoid', 'right-trapezoid', 'parallelogram', 'rhombus', 'box3d', 'cylinder3d', 'pyramid3d'].includes(currentStroke.tool);
     const worldPt = screenToWorld(e.clientX, e.clientY, !!isShape);
     const pressure = e.pressure && e.pressure > 0 ? e.pressure : 0.5;
 
@@ -1060,7 +1159,11 @@ export default function App() {
   // Insert Quick Math Formula
   const handleInsertQuickMath = (latex: string) => {
     pushUndoState();
-    const centerWorld = screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    const centerWorld = screenToWorld(
+      canvasRect ? canvasRect.left + canvasRect.width / 2 : window.innerWidth / 2,
+      canvasRect ? canvasRect.top + canvasRect.height / 2 : window.innerHeight / 2
+    );
     const newElement: MathElement = {
       id: `math-${Date.now()}`,
       x: Math.round(centerWorld.x - 60),
@@ -1069,10 +1172,55 @@ export default function App() {
       cleanText: latex,
       fontSize: 32,
       color: theme === 'chalkboard' || theme === 'blueprint' ? '#ffffff' : '#1e3a8a',
+      fontStyle: 'latex',
     };
 
     updateCurrentPage(() => ({
       mathElements: [...currentPage.mathElements, newElement],
+    }));
+  };
+
+  const handleMathDragStart = (event: React.PointerEvent, elementId: string) => {
+    if ((event.target as HTMLElement).closest('button, input, textarea')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const element = currentPage.mathElements.find((item) => item.id === elementId);
+    if (!element) return;
+    pushUndoState();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startElementX = element.x;
+    const startElementY = element.y;
+    const handleMove = (moveEvent: PointerEvent) => {
+      const dx = (moveEvent.clientX - startX) / zoom;
+      const dy = (moveEvent.clientY - startY) / zoom;
+      markDirty();
+      setPages((existing) => existing.map((page) => page.id === currentPageId
+        ? { ...page, mathElements: page.mathElements.map((item) => item.id === elementId
+          ? { ...item, x: startElementX + dx, y: startElementY + dy }
+          : item) }
+        : page));
+    };
+    const handleUp = () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
+  };
+
+  const handleUpdateMathElement = (updatedElement: MathElement) => {
+    updateCurrentPage(() => ({
+      mathElements: currentPage.mathElements.map((element) => element.id === updatedElement.id ? updatedElement : element),
+    }));
+  };
+
+  const handleDeleteMathElement = (elementId: string) => {
+    pushUndoState();
+    updateCurrentPage(() => ({
+      mathElements: currentPage.mathElements.filter((element) => element.id !== elementId),
     }));
   };
 
@@ -1205,10 +1353,10 @@ export default function App() {
     setBoardMessage('Поздравляем! Подписка DOSKA PRO активирована. Вся реклама отключена!');
   };
 
-  const handleCreateBoard = (subjectId = selectedSubjectId) => {
+  const handleCreateBoard = (subjectId = selectedSubjectId, background: BoardBackground = 'grid') => {
     const mode: SubjectMode = subjectId === 'geometry' ? 'geometry' : 'algebra';
     const subjectLabel = labelForSubject(subjectId);
-    const newPage = makeEmptyPage(mode);
+    const newPage = makeEmptyPage(mode, background);
     setAlgebraPages(mode === 'algebra' ? [newPage] : []);
     setGeometryPages(mode === 'geometry' ? [newPage] : []);
     setCurrentAlgebraPageId(mode === 'algebra' ? newPage.id : '');
@@ -1305,15 +1453,107 @@ export default function App() {
     }));
   };
 
-  // Export to PNG Image
-  const handleExportPNG = () => {
+  const handleExport = (format: ExportFormat) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const link = document.createElement('a');
-    link.download = `mathboard_${subjectMode}_${currentPage.title.replace(/\s+/g, '_')}_${Date.now()}.png`;
-    link.href = canvas.toDataURL('image/png');
+    const baseName = `doska_${activeBoard?.title || 'board'}`.replace(/[^\p{L}\p{N}_-]+/gu, '_');
+
+    if (format === 'pdf') {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        setBoardMessage('Разрешите всплывающие окна для экспорта PDF.');
+        return;
+      }
+      const pageImages = pages.map((page) => {
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = 1600;
+        pageCanvas.height = 900;
+        const context = pageCanvas.getContext('2d');
+        if (!context) return '';
+        const pageViewport: Viewport = { pan: page.pan, zoom: page.zoom, width: 1600, height: 900 };
+        drawBoardBackground(context, pageViewport, page.background || 'grid', baseCellSize);
+        page.graphs.forEach((graph) => drawGraphPlot(context, graph, pageViewport));
+        page.strokes.forEach((stroke) => drawStroke(context, stroke, pageViewport));
+        page.mathElements.forEach((element) => {
+          context.fillStyle = element.color;
+          context.font = `${element.fontSize * page.zoom}px sans-serif`;
+          context.fillText(element.cleanText || element.latex || '', (element.x + page.pan.x) * page.zoom, (element.y + page.pan.y) * page.zoom);
+        });
+        return `<section><h2>${page.title.replace(/[&<>"']/g, '')}</h2><img src="${pageCanvas.toDataURL('image/png')}" /></section>`;
+      }).join('');
+      printWindow.document.write(`<!doctype html><html><head><title>${(activeBoard?.title || 'Урок').replace(/[&<>"']/g, '')}</title><style>@page{size:landscape;margin:10mm}body{font:14px sans-serif;color:#111}section{break-after:page}section:last-child{break-after:auto}img{width:100%;height:auto}h2{margin:0 0 8px}</style></head><body>${pageImages}</body></html>`);
+      printWindow.document.close();
+      printWindow.onload = () => printWindow.print();
+      return;
+    }
+
+    const composedCanvas = document.createElement('canvas');
+    composedCanvas.width = canvas.width;
+    composedCanvas.height = canvas.height;
+    const composedContext = composedCanvas.getContext('2d');
+    if (!composedContext) return;
+    composedContext.drawImage(canvas, 0, 0);
+    const deviceScale = canvas.width / Math.max(1, canvas.clientWidth);
+    currentPage.mathElements.forEach((element) => {
+      composedContext.fillStyle = element.color;
+      composedContext.font = `${element.fontSize * zoom * deviceScale}px sans-serif`;
+      composedContext.textBaseline = 'top';
+      composedContext.fillText(
+        element.cleanText || element.latex || element.text || '',
+        (element.x + pan.x) * zoom * deviceScale,
+        (element.y + pan.y) * zoom * deviceScale
+      );
+    });
+
+    if (format === 'jpeg-low' || format === 'jpeg-medium') {
+      link.download = `${baseName}.jpg`;
+      link.href = composedCanvas.toDataURL('image/jpeg', format === 'jpeg-low' ? 0.55 : 0.82);
+    } else if (format === 'png-ultra') {
+      const scale = Math.max(2, Math.ceil(3840 / canvas.clientWidth));
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = canvas.width * scale;
+      exportCanvas.height = canvas.height * scale;
+      const context = exportCanvas.getContext('2d');
+      if (!context) return;
+      context.drawImage(composedCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
+      link.download = `${baseName}_ultrahd.png`;
+      link.href = exportCanvas.toDataURL('image/png');
+    } else {
+      const image = composedCanvas.toDataURL('image/png');
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${canvas.width} ${canvas.height}"><image href="${image}" width="100%" height="100%"/></svg>`;
+      link.download = `${baseName}.svg`;
+      link.href = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    }
     link.click();
+    if (format === 'svg') URL.revokeObjectURL(link.href);
+  };
+
+  const handleShareBoard = async () => {
+    if (!activeBoard) return;
+    if (!activeBoard.id || dirtyRef.current) {
+      const saved = await saveBoardRef.current();
+      if (!saved) return;
+    }
+    const boardUrl = new URL(window.location.href);
+    const lessonUrl = boardUrl.toString();
+    const text = `Приглашаю на интерактивную доску DOSKA! Ссылка на урок: ${lessonUrl}. Сервис для наглядного обучения и репетиторов: https://doska-edu.ru`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Урок на DOSKA', text, url: lessonUrl });
+      } else {
+        await navigator.clipboard.writeText(text);
+        setBoardMessage('Текст с приглашением скопирован!');
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      try {
+        await navigator.clipboard.writeText(text);
+        setBoardMessage('Текст с приглашением скопирован!');
+      } catch {
+        setBoardMessage('Не удалось скопировать приглашение.');
+      }
+    }
   };
 
   // Fullscreen toggle for tablets
@@ -1377,7 +1617,8 @@ export default function App() {
           isLoading={isLoadingBoards}
           currentUser={currentUser}
           onSelectSubject={setSelectedSubjectId}
-          onCreateBoard={() => handleCreateBoard(selectedSubjectId)}
+          onCreateBoard={() => setIsCreateBoardOpen(true)}
+          onOpenAccountSettings={() => setIsAccountSettingsOpen(true)}
           onOpenBoard={handleRequestOpenBoard}
           onRenameBoard={handleRenameSavedBoard}
           onDeleteBoard={handleDeleteSavedBoard}
@@ -1421,7 +1662,10 @@ export default function App() {
               onResetZoom={() => { markDirty(); setZoom(1); setPan({ x: window.innerWidth / 3, y: 150 }); }}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onClearPage={handleClearPage}
-              onExportPNG={handleExportPNG}
+              onExport={handleExport}
+              onShare={handleShareBoard}
+              isPro={Boolean(currentUser?.is_pro)}
+              onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
               onToggleFullscreen={handleToggleFullscreen}
             />
           )}
@@ -1433,6 +1677,7 @@ export default function App() {
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onWheel={handleWheel}
+        style={{ touchAction: 'none' }}
         className={`w-full h-full block cursor-${
           currentTool === 'pan'
             ? 'grab'
@@ -1443,6 +1688,19 @@ export default function App() {
             : 'crosshair'
         }`}
       />
+
+      {currentPage.mathElements.map((element) => (
+        <MathCard
+          key={element.id}
+          element={element}
+          zoom={zoom}
+          pan={pan}
+          theme={theme}
+          onUpdate={handleUpdateMathElement}
+          onDelete={handleDeleteMathElement}
+          onDragStart={handleMathDragStart}
+        />
+      ))}
 
       {/* 4. Geometry Virtual Instruments (Ruler & Protractor) */}
       {subjectMode === 'geometry' && (
@@ -1487,6 +1745,8 @@ export default function App() {
         onOpenGraphPlotter={() => setIsGraphPlotOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenToolbarCustomizer={() => setIsToolbarCustomizerOpen(true)}
+              currentUser={currentUser}
+              onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
         position={effectiveToolbarPos}
         onChangePosition={(pos) => {
           if (isBottomBannerVisible) {
@@ -1537,6 +1797,10 @@ export default function App() {
         onChangeSmoothingLevel={setSmoothingLevel}
         snapShapes={snapShapes}
         onToggleSnapShapes={() => setSnapShapes(!snapShapes)}
+        boardBackground={currentPage.background || 'grid'}
+        onChangeBoardBackground={(background) => updateCurrentPage(() => ({ background }))}
+        currentUser={currentUser}
+        onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
         onResetToolbarPos={() =>
           setToolbarPos({
             x: Math.max(20, window.innerWidth / 2 - 240),
@@ -1545,6 +1809,23 @@ export default function App() {
         }
       />
         </CanvasErrorBoundary>
+      )}
+
+      <CreateBoardModal
+        isOpen={isCreateBoardOpen}
+        onClose={() => setIsCreateBoardOpen(false)}
+        onCreateBoard={handleCreateBoard}
+        currentUser={currentUser}
+        onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
+      />
+      {currentUser && (
+        <AccountSettingsModal
+          isOpen={isAccountSettingsOpen}
+          onClose={() => setIsAccountSettingsOpen(false)}
+          currentUser={currentUser}
+          authToken={getStoredToken() || ''}
+          onUserUpdated={setCurrentUser}
+        />
       )}
 
       {boardMessage && (

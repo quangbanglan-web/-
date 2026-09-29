@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { ToolType, ThemeType, SubjectMode, ToolbarCustomization } from '../types/board';
+import { User } from '../types/auth';
 import {
   Pen,
   Highlighter,
@@ -22,6 +23,7 @@ import {
   GripVertical,
   SlidersHorizontal,
   Grid,
+  Crown,
 } from 'lucide-react';
 
 interface ToolbarProps {
@@ -52,6 +54,9 @@ interface ToolbarProps {
   onOpenGraphPlotter: () => void;
   onOpenSettings: () => void;
   onOpenToolbarCustomizer: () => void;
+  // PRO access
+  currentUser?: User | null;
+  onOpenSubscription?: () => void;
   // Free Floating Position
   position: { x: number; y: number };
   onChangePosition: (pos: { x: number; y: number }) => void;
@@ -83,6 +88,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onOpenGraphPlotter,
   onOpenSettings,
   onOpenToolbarCustomizer,
+  currentUser,
+  onOpenSubscription,
   position,
   onChangePosition,
 }) => {
@@ -101,7 +108,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const widths = [2, 4, 7, 14];
 
   // Available geometric shapes
-  const shapes: Array<{ tool: ToolType; label: string; icon: React.ReactNode }> = [
+  const shapes: Array<{ tool: ToolType; label: string; icon: React.ReactNode; isPro?: boolean }> = [
     { tool: 'line', label: 'Прямая', icon: <Minus className="w-4 h-4" /> },
     { tool: 'dashed-line', label: 'Пунктир (высота / грань)', icon: <span className="font-mono font-black text-xs">---</span> },
     { tool: 'arrow', label: 'Вектор / Стрелка', icon: <MoveRight className="w-4 h-4" /> },
@@ -109,6 +116,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     { tool: 'right-triangle', label: 'Прямоугольный треугольник', icon: <span className="font-bold text-xs">⊿</span> },
     { tool: 'rect', label: 'Прямоугольник', icon: <Square className="w-4 h-4" /> },
     { tool: 'circle', label: 'Окружность с центром', icon: <Circle className="w-4 h-4" /> },
+    // PRO shapes
+    { tool: 'trapezoid', label: 'Трапеция равнобедренная', icon: <span className="font-bold text-xs">⌓</span>, isPro: true },
+    { tool: 'right-trapezoid', label: 'Прямоугольная трапеция', icon: <span className="font-bold text-xs">⊓</span>, isPro: true },
+    { tool: 'parallelogram', label: 'Параллелограмм', icon: <span className="font-bold text-xs">▱</span>, isPro: true },
+    { tool: 'rhombus', label: 'Ромб', icon: <span className="font-bold text-xs">◇</span>, isPro: true },
+    { tool: 'box3d', label: 'Параллелепипед 3D', icon: <span className="font-bold text-xs">⬛</span>, isPro: true },
+    { tool: 'cylinder3d', label: 'Цилиндр 3D', icon: <span className="font-bold text-xs">⌀</span>, isPro: true },
+    { tool: 'pyramid3d', label: 'Пирамида 3D', icon: <span className="font-bold text-xs">△</span>, isPro: true },
   ];
 
   const activeShape = shapes.find((s) => s.tool === currentTool);
@@ -263,24 +278,46 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   Фигуры и чертежи:
                 </div>
-                {shapes.map((s) => (
-                  <button
-                    key={s.tool}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectTool(s.tool);
-                      setShowShapesMenu(false);
-                    }}
-                    className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-xl transition ${
-                      currentTool === s.tool
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'hover:bg-black/5 dark:hover:bg-white/10'
-                    }`}
-                  >
-                    <span className="w-4 h-4 flex items-center justify-center">{s.icon}</span>
-                    <span>{s.label}</span>
-                  </button>
-                ))}
+                {shapes.map((s) => {
+                  const isProShape = s.isPro;
+                  const hasProAccess = currentUser?.is_pro;
+                  const locked = isProShape && !hasProAccess;
+                  return (
+                    <button
+                      key={s.tool}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (locked) {
+                          setShowShapesMenu(false);
+                          onOpenSubscription?.();
+                          return;
+                        }
+                        onSelectTool(s.tool);
+                        setShowShapesMenu(false);
+                      }}
+                      title={locked ? 'Доступно в PRO-подписке' : s.label}
+                      className={`flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-xl transition ${
+                        currentTool === s.tool
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : locked
+                          ? 'opacity-60 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                          : 'hover:bg-black/5 dark:hover:bg-white/10'
+                      }`}
+                    >
+                      <span className="w-4 h-4 flex items-center justify-center">{s.icon}</span>
+                      <span className="flex-1 text-left">{s.label}</span>
+                      {isProShape && (
+                        <span className={`ml-auto inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-black ${
+                          hasProAccess
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-amber-500 text-white'
+                        }`}>
+                          <Crown className="w-2 h-2" />PRO
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
