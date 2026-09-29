@@ -189,7 +189,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </button>
               )}
 
-              <div className="flex items-center gap-2.5 rounded-lg border border-emerald-950/10 bg-white/70 px-3 py-1.5 shadow-sm">
+              <div
+                onClick={onOpenAccountSettings}
+                role={onOpenAccountSettings ? 'button' : undefined}
+                className={`flex items-center gap-2.5 rounded-lg border border-emerald-950/10 bg-white/70 px-3 py-1.5 shadow-sm ${
+                  onOpenAccountSettings ? 'cursor-pointer hover:border-emerald-700/40 hover:bg-white transition' : ''
+                }`}
+                title="Настройки аккаунта"
+              >
                 <span className="grid h-8 w-8 place-items-center rounded-full bg-emerald-800 text-xs font-bold text-white shadow-xs">
                   {currentUser.name ? currentUser.name[0].toUpperCase() : <UserIcon className="h-4 w-4" />}
                 </span>
@@ -211,7 +218,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 ) : (
                   <button
                     type="button"
-                    onClick={onOpenSubscription}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenSubscription?.();
+                    }}
                     title="Тариф FREE. Нажмите, чтобы отключить рекламу и получить PRO"
                     className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700 transition hover:bg-amber-100 hover:text-amber-900"
                   >

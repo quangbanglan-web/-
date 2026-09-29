@@ -727,10 +727,30 @@ export function drawStroke(
 
   // 16. Freehand Pen / Highlighter with natural smooth bezier curves
   if (pts.length === 1) {
+    const rawP = stroke.points[0]?.pressure ?? 0.5;
+    const dotW = stroke.tool === 'pen' && stroke.points[0]?.pressure !== undefined
+      ? stroke.width * (0.25 + 0.75 * rawP) * zoom
+      : stroke.width * zoom;
     ctx.fillStyle = stroke.color;
     ctx.beginPath();
-    ctx.arc(pts[0].x, pts[0].y, (stroke.width * zoom) / 2, 0, Math.PI * 2);
+    ctx.arc(pts[0].x, pts[0].y, dotW / 2, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  const hasPressurePoints = stroke.tool === 'pen' && stroke.points.some((p) => p.pressure !== undefined && Math.abs(p.pressure - 0.5) > 0.05);
+  if (hasPressurePoints && pts.length > 2) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const pr = ((stroke.points[i]?.pressure ?? 0.5) + (stroke.points[i + 1]?.pressure ?? 0.5)) / 2;
+      ctx.lineWidth = stroke.width * (0.25 + 0.75 * pr) * zoom;
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
     ctx.restore();
     return;
   }

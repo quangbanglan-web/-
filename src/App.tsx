@@ -126,6 +126,18 @@ const isPointNearStroke = (stroke: Stroke, point: Point, radius: number) => {
     return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
   };
 
+  const isPointInPoly = (pt: Point, poly: Point[]) => {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].x, yi = poly[i].y;
+      const xj = poly[j].x, yj = poly[j].y;
+      const intersect = ((yi > pt.y) !== (yj > pt.y)) &&
+        (pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
   let paths: Point[][] = [points];
   if (shapeTools.includes(tool) && points.length >= 2) {
     const [start, end] = [points[0], points[points.length - 1]];
@@ -135,19 +147,43 @@ const isPointNearStroke = (stroke: Stroke, point: Point, radius: number) => {
     const bottom = Math.max(start.y, end.y);
     const width = right - left;
     const height = bottom - top;
-    if (tool === 'line' || tool === 'dashed-line' || tool === 'arrow' || tool === 'axes') paths = [[start, end]];
-    else if (tool === 'circle' || tool === 'cylinder3d') {
-      const ellipse = (cy: number, rx = width / 2, ry = height / 2) => Array.from({ length: 33 }, (_, index) => {
+
+    // Check interior hit-test for closed shapes (clicking inside the shape immediately erases it)
+    if (tool === 'rect') {
+      if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) return true;
+      paths = [[{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }, { x: left, y: top }]];
+    } else if (tool === 'circle') {
+      const rx = width / 2 || 1;
+      const ry = height / 2 || 1;
+      const cx = (left + right) / 2;
+      const cy = (top + bottom) / 2;
+      if (((point.x - cx) / rx) ** 2 + ((point.y - cy) / ry) ** 2 <= 1) return true;
+      const ellipse = (cyPos: number, rX = rx, rY = ry) => Array.from({ length: 33 }, (_, index) => {
         const angle = (index / 32) * Math.PI * 2;
-        return { x: (left + right) / 2 + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry };
+        return { x: cx + Math.cos(angle) * rX, y: cyPos + Math.sin(angle) * rY };
       });
-      paths = tool === 'circle'
-        ? [ellipse((top + bottom) / 2)]
-        : [ellipse(top + height * 0.16, width / 2, height * 0.16), ellipse(bottom - height * 0.16, width / 2, height * 0.16), [{ x: left, y: top + height * 0.16 }, { x: left, y: bottom - height * 0.16 }], [{ x: right, y: top + height * 0.16 }, { x: right, y: bottom - height * 0.16 }]];
-    } else if (tool === 'rect') paths = [[{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }, { x: left, y: top }]];
-    else if (tool === 'triangle') paths = [[{ x: (left + right) / 2, y: top }, { x: right, y: bottom }, { x: left, y: bottom }, { x: (left + right) / 2, y: top }]];
-    else if (tool === 'right-triangle') paths = [[{ x: left, y: top }, { x: right, y: bottom }, { x: left, y: bottom }, { x: left, y: top }]];
-    else if (tool === 'trapezoid' || tool === 'right-trapezoid' || tool === 'parallelogram' || tool === 'rhombus') {
+      paths = [ellipse(cy)];
+    } else if (tool === 'cylinder3d') {
+      if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) return true;
+      const ellipse = (cyPos: number, rX = width / 2, rY = height * 0.16) => Array.from({ length: 33 }, (_, index) => {
+        const angle = (index / 32) * Math.PI * 2;
+        return { x: (left + right) / 2 + Math.cos(angle) * rX, y: cyPos + Math.sin(angle) * rY };
+      });
+      paths = [
+        ellipse(top + height * 0.16),
+        ellipse(bottom - height * 0.16),
+        [{ x: left, y: top + height * 0.16 }, { x: left, y: bottom - height * 0.16 }],
+        [{ x: right, y: top + height * 0.16 }, { x: right, y: bottom - height * 0.16 }],
+      ];
+    } else if (tool === 'triangle') {
+      const poly = [{ x: (left + right) / 2, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
+      if (isPointInPoly(point, poly)) return true;
+      paths = [[...poly, poly[0]]];
+    } else if (tool === 'right-triangle') {
+      const poly = [{ x: left, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
+      if (isPointInPoly(point, poly)) return true;
+      paths = [[...poly, poly[0]]];
+    } else if (tool === 'trapezoid' || tool === 'right-trapezoid' || tool === 'parallelogram' || tool === 'rhombus') {
       const inset = width * 0.2;
       const outline = tool === 'trapezoid'
         ? [{ x: left + inset, y: top }, { x: right - inset, y: top }, { x: right, y: bottom }, { x: left, y: bottom }]
@@ -156,23 +192,29 @@ const isPointNearStroke = (stroke: Stroke, point: Point, radius: number) => {
           : tool === 'parallelogram'
             ? [{ x: left + inset, y: top }, { x: right, y: top }, { x: right - inset, y: bottom }, { x: left, y: bottom }]
             : [{ x: (left + right) / 2, y: top }, { x: right, y: (top + bottom) / 2 }, { x: (left + right) / 2, y: bottom }, { x: left, y: (top + bottom) / 2 }];
+      if (isPointInPoly(point, outline)) return true;
       paths = [[...outline, outline[0]]];
     } else if (tool === 'box3d') {
-      const dx = width * 0.25;
-      const dy = height * 0.2;
-      const a = { x: left + dx, y: top };
+      const depth = Math.min(width, height) * 0.35;
+      const ox = depth * 0.7;
+      const oy = -depth * 0.5;
+      if (point.x >= left && point.x <= right + ox && point.y >= top + oy && point.y <= bottom) return true;
+      const a = { x: left, y: top };
       const b = { x: right, y: top };
-      const c = { x: right, y: bottom - dy };
-      const d = { x: left + dx, y: bottom - dy };
-      const e = { x: left, y: top + dy };
-      const f = { x: right - dx, y: top + dy };
-      const g = { x: right - dx, y: bottom };
-      const h = { x: left, y: bottom };
-      paths = [[a, b, c, d, a], [e, f, g, h, e], [a, e], [b, f], [c, g], [d, h]];
+      const c = { x: right, y: bottom };
+      const d = { x: left, y: bottom };
+      const a2 = { x: left + ox, y: top + oy };
+      const b2 = { x: right + ox, y: top + oy };
+      const c2 = { x: right + ox, y: bottom + oy };
+      const d2 = { x: left + ox, y: bottom + oy };
+      paths = [[a, b, c, d, a], [a2, b2, c2, d2, a2], [a, a2], [b, b2], [c, c2], [d, d2]];
     } else if (tool === 'pyramid3d') {
+      if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) return true;
       const apex = { x: (left + right) / 2, y: top };
       const base = [{ x: left, y: bottom }, { x: right, y: bottom }, { x: right - width * 0.2, y: bottom - height * 0.2 }, { x: left + width * 0.2, y: bottom - height * 0.2 }];
       paths = [[...base, base[0]], [apex, base[0]], [apex, base[1]], [apex, base[2]], [apex, base[3]]];
+    } else if (tool === 'line' || tool === 'dashed-line' || tool === 'arrow' || tool === 'axes') {
+      paths = [[start, end]];
     }
   }
 
@@ -462,7 +504,17 @@ export default function App() {
   // Panning with spacebar or middle mouse
   const isSpacePressedRef = useRef(false);
   const isPanningRef = useRef(false);
+  const isErasingRef = useRef(false);
   const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Auto-dismiss toast messages
+  useEffect(() => {
+    if (!boardMessage) return;
+    const timer = setTimeout(() => {
+      setBoardMessage('');
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [boardMessage]);
 
   // Multi-touch tracking for pinch-to-zoom
   const activePointersRef = useRef<Map<number, { x: number; y: number; isPen: boolean }>>(
@@ -967,6 +1019,11 @@ export default function App() {
     if (e.button !== 0 && !isTouch && !isPen) return;
 
     const proShapes = ['trapezoid', 'right-trapezoid', 'parallelogram', 'rhombus', 'box3d', 'cylinder3d', 'pyramid3d'];
+    if (proShapes.includes(currentTool) && !currentUser?.is_pro) {
+      setIsSubscriptionModalOpen(true);
+      return;
+    }
+
     const isShape = ['line', 'dashed-line', 'arrow', 'rect', 'circle', 'triangle', 'right-triangle', 'axes', ...proShapes].includes(currentTool);
     const worldPt = screenToWorld(e.clientX, e.clientY, isShape);
     const rawPressure = e.pressure && e.pressure > 0 ? e.pressure : 0.5;
@@ -981,6 +1038,7 @@ export default function App() {
     }
 
     if (currentTool === 'eraser') {
+      isErasingRef.current = true;
       pushUndoState();
       eraseAtPoint(worldPt);
       return;
@@ -1057,7 +1115,7 @@ export default function App() {
     }
 
     // Eraser while dragging
-    if (currentTool === 'eraser' && (e.buttons === 1 || e.pointerType === 'touch' || e.pointerType === 'pen')) {
+    if (currentTool === 'eraser' && (isErasingRef.current || e.buttons === 1)) {
       eraseAtPoint(worldPt);
       return;
     }
@@ -1107,6 +1165,7 @@ export default function App() {
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     activePointersRef.current.delete(e.pointerId);
+    isErasingRef.current = false;
 
     if (activePointersRef.current.size < 2) {
       pinchStartDistRef.current = null;
@@ -1454,6 +1513,10 @@ export default function App() {
   };
 
   const handleExport = (format: ExportFormat) => {
+    if ((format === 'png-ultra' || format === 'pdf' || format === 'svg') && !currentUser?.is_pro) {
+      setIsSubscriptionModalOpen(true);
+      return;
+    }
     const canvas = canvasRef.current;
     if (!canvas) return;
     const link = document.createElement('a');
@@ -1536,6 +1599,9 @@ export default function App() {
       if (!saved) return;
     }
     const boardUrl = new URL(window.location.href);
+    if (activeBoard.id) {
+      boardUrl.searchParams.set('id', activeBoard.id);
+    }
     const lessonUrl = boardUrl.toString();
     const text = `Приглашаю на интерактивную доску DOSKA! Ссылка на урок: ${lessonUrl}. Сервис для наглядного обучения и репетиторов: https://doska-edu.ru`;
     try {
@@ -1801,6 +1867,7 @@ export default function App() {
         onChangeBoardBackground={(background) => updateCurrentPage(() => ({ background }))}
         currentUser={currentUser}
         onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
+        onOpenAccountSettings={() => setIsAccountSettingsOpen(true)}
         onResetToolbarPos={() =>
           setToolbarPos({
             x: Math.max(20, window.innerWidth / 2 - 240),

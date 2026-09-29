@@ -11,6 +11,10 @@
     user-select: text;
     -webkit-user-select: text;
   }
+
+  canvas {
+    touch-action: none;
+  }
 }
 
 /* Authentic handwriting font styles */

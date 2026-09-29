@@ -43,6 +43,30 @@ export const MathCard: React.FC<MathCardProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(element.cleanText || element.text || element.latex);
 
+  const handleResizeStart = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startFontSize = element.fontSize || 32;
+
+    const handlePointerMove = (moveEv: PointerEvent) => {
+      const delta = (moveEv.clientX - startX) + (moveEv.clientY - startY);
+      const newFontSize = Math.min(84, Math.max(16, Math.round(startFontSize + delta / (4 * Math.max(0.2, zoom)))));
+      onUpdate({ ...element, fontSize: newFontSize });
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  };
+
   // Screen coordinates
   const screenX = (element.x + pan.x) * zoom;
   const screenY = (element.y + pan.y) * zoom;
@@ -314,9 +338,22 @@ export const MathCard: React.FC<MathCardProps> = ({
           )}
         </button>
 
-        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono pr-2">
           Клик для стиля
         </span>
+      </div>
+
+      {/* Interactive Drag-to-Resize Handle */}
+      <div
+        onPointerDown={handleResizeStart}
+        title="Потяните для изменения размера формулы"
+        className="absolute bottom-1 right-1 w-4 h-4 cursor-se-resize flex items-center justify-center opacity-40 hover:opacity-100 transition text-slate-400 hover:text-blue-600"
+      >
+        <svg viewBox="0 0 10 10" className="w-2.5 h-2.5 fill-current">
+          <circle cx="8" cy="8" r="1.2" />
+          <circle cx="4" cy="8" r="1.2" />
+          <circle cx="8" cy="4" r="1.2" />
+        </svg>
       </div>
     </div>
   );

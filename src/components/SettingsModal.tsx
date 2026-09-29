@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Sliders, Sparkles, Check } from 'lucide-react';
+import { X, Sliders, Sparkles, Check, User as UserIcon } from 'lucide-react';
 import { BoardBackground, ThemeType } from '../types/board';
 import { User } from '../types/auth';
 import { SmoothingLevel } from '../utils/strokeSmoother';
@@ -23,6 +23,7 @@ interface SettingsModalProps {
   onChangeBoardBackground: (background: BoardBackground) => void;
   currentUser?: User | null;
   onOpenSubscription?: () => void;
+  onOpenAccountSettings?: () => void;
   onResetToolbarPos: () => void;
 }
 
@@ -45,6 +46,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onChangeBoardBackground,
   currentUser,
   onOpenSubscription,
+  onOpenAccountSettings,
   onResetToolbarPos,
 }) => {
   if (!isOpen) return null;
@@ -300,6 +302,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               Сбросить в центр
             </button>
           </div>
+
+          {currentUser && onOpenAccountSettings && (
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold block">Настройки аккаунта</span>
+                <span className="text-[11px] text-slate-400 block leading-tight">
+                  Смена имени, email и пароля ({currentUser.email})
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenAccountSettings();
+                }}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition flex items-center gap-1.5 text-blue-600 dark:text-blue-400"
+              >
+                <UserIcon className="w-3.5 h-3.5" />
+                <span>Настройки</span>
+              </button>
+            </div>
+          )}
         </div>
 
         <div
