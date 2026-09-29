@@ -323,7 +323,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {boards.map((board, index) => {
                   const accent = subjectAccents[subjects.findIndex((subject) => subject.id === board.subject) % subjectAccents.length] || subjectAccents[index % subjectAccents.length];
                   return (
-                    <article key={board.id} className="flex min-h-48 flex-col rounded-lg border border-slate-200 bg-white/90 p-4 shadow-[0_2px_10px_rgba(15,55,43,0.04)] transition hover:border-emerald-900/25 hover:shadow-[0_8px_24px_rgba(15,55,43,0.09)]">
+                    <article
+                      key={board.id}
+                      onClick={() => onOpenBoard(board.id)}
+                      className="group flex min-h-48 flex-col rounded-lg border border-slate-200 bg-white/90 p-4 shadow-[0_2px_10px_rgba(15,55,43,0.04)] transition hover:border-emerald-900/30 hover:shadow-[0_8px_24px_rgba(15,55,43,0.09)] cursor-pointer"
+                    >
                       <div className="mb-4 flex items-start justify-between gap-3">
                         <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-md border ${accent}`}>
                           <BookOpen className="h-4 w-4" />
@@ -332,16 +336,40 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           {formatDate(board.updated_at)}
                         </span>
                       </div>
-                      <h3 className="mb-1 line-clamp-2 min-h-10 text-sm font-bold leading-5 text-slate-900">{board.title}</h3>
+                      <h3 className="mb-1 line-clamp-2 min-h-10 text-sm font-bold leading-5 text-slate-900 group-hover:text-emerald-900 transition-colors">{board.title}</h3>
                       <p className="mb-4 text-xs text-slate-500">Создана {formatDate(board.created_at)}</p>
-                      <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-3">
-                        <button onClick={() => onOpenBoard(board.id)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-emerald-800 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-900">
+                      <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-3" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenBoard(board.id);
+                          }}
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-emerald-800 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-900"
+                        >
                           Открыть <ArrowUpRight className="h-3.5 w-3.5" />
                         </button>
-                        <button onClick={() => { setRenameError(''); setRenamingBoard({ id: board.id, title: board.title }); }} title="Переименовать" className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 transition hover:border-emerald-700 hover:text-emerald-800">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenameError('');
+                            setRenamingBoard({ id: board.id, title: board.title });
+                          }}
+                          title="Переименовать"
+                          className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 transition hover:border-emerald-700 hover:text-emerald-800"
+                        >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        <button onClick={() => void deleteBoard(board.id, board.title)} title="Удалить" className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-500 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void deleteBoard(board.id, board.title);
+                          }}
+                          title="Удалить"
+                          className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-500 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+                        >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>

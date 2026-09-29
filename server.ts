@@ -799,36 +799,57 @@ app.post('/api/admin/users/:id/revoke-pro', authMiddleware, adminMiddleware, (re
 // ----------------- Boards API (Protected) -----------------
 
 app.get('/api/boards', authMiddleware, (req: AuthRequest, res: Response) => {
-  const userId = req.user!.id;
-  const subject = typeof req.query.subject === 'string' ? req.query.subject.trim() : '';
-  const boards = subject
-    ? database.prepare('SELECT id, subject, title, updated_at, created_at FROM boards WHERE user_id = ? AND subject = ? ORDER BY updated_at DESC').all(userId, subject)
-    : database.prepare('SELECT id, subject, title, updated_at, created_at FROM boards WHERE user_id = ? ORDER BY updated_at DESC').all(userId);
-  return res.json(boards);
+  try {
+    const userId = req.user!.id;
+    const isAdmin = req.user?.role === 'admin';
+    const subject = typeof req.query.subject === 'string' ? req.query.subject.trim() : '';
+
+    const query = isAdmin
+      ? (subject
+          ? 'SELECT id, subject, title, updated_at, created_at FROM boards WHERE subject = ? ORDER BY updated_at DESC'
+          : 'SELECT id, subject, title, updated_at, created_at FROM boards ORDER BY updated_at DESC')
+      : (subject
+          ? 'SELECT id, subject, title, updated_at, created_at FROM boards WHERE (user_id = ? OR user_id IS NULL OR user_id = \'default-teacher-uuid\') AND subject = ? ORDER BY updated_at DESC'
+          : 'SELECT id, subject, title, updated_at, created_at FROM boards WHERE (user_id = ? OR user_id IS NULL OR user_id = \'default-teacher-uuid\') ORDER BY updated_at DESC');
+
+    const boards = isAdmin
+      ? (subject ? database.prepare(query).all(subject) : database.prepare(query).all())
+      : (subject ? database.prepare(query).all(userId, subject) : database.prepare(query).all(userId));
+
+    return res.json(boards);
+  } catch (error) {
+    console.error('Error in GET /api/boards:', error);
+    return res.status(500).json({ error: 'Внутренняя ошибка сервера при получении списка досок' });
+  }
 });
 
 app.get('/api/boards/:id', authMiddleware, (req: AuthRequest, res: Response) => {
-  const userId = req.user!.id;
-  const isAdmin = req.user?.role === 'admin';
-  const query = isAdmin
-    ? 'SELECT id, subject, title, data, created_at, updated_at FROM boards WHERE id = ?'
-    : 'SELECT id, subject, title, data, created_at, updated_at FROM boards WHERE id = ? AND (user_id = ? OR user_id IS NULL OR user_id = \'default-teacher-uuid\')';
-  const board = (isAdmin
-    ? database.prepare(query).get(req.params.id)
-    : database.prepare(query).get(req.params.id, userId)) as
-    | { id: string; subject: string; title: string; data: string; created_at: string; updated_at: string }
-    | undefined;
-
-  if (!board) return res.status(404).json({ error: 'Доска не найдена' });
-
-  let parsedData = {};
   try {
-    parsedData = typeof board.data === 'string' ? JSON.parse(board.data) : board.data;
-  } catch (err) {
-    console.error('Failed to parse board data JSON:', err);
-    parsedData = {};
+    const userId = req.user!.id;
+    const isAdmin = req.user?.role === 'admin';
+    const query = isAdmin
+      ? 'SELECT id, subject, title, data, created_at, updated_at FROM boards WHERE id = ?'
+      : 'SELECT id, subject, title, data, created_at, updated_at FROM boards WHERE id = ? AND (user_id = ? OR user_id IS NULL OR user_id = \'default-teacher-uuid\')';
+    const board = (isAdmin
+      ? database.prepare(query).get(req.params.id)
+      : database.prepare(query).get(req.params.id, userId)) as
+      | { id: string; subject: string; title: string; data: string; created_at: string; updated_at: string }
+      | undefined;
+
+    if (!board) return res.status(404).json({ error: 'Доска не найдена' });
+
+    let parsedData: any = {};
+    try {
+      parsedData = typeof board.data === 'string' ? JSON.parse(board.data) : (board.data || {});
+    } catch (err) {
+      console.error('Failed to parse board data JSON:', err);
+      parsedData = {};
+    }
+    return res.status(200).json({ ...board, data: parsedData });
+  } catch (error) {
+    console.error('Error in GET /api/boards/:id:', error);
+    return res.status(500).json({ error: 'Внутренняя ошибка сервера при загрузке доски' });
   }
-  return res.json({ ...board, data: parsedData });
 });
 
 app.post('/api/boards', authMiddleware, (req: AuthRequest, res: Response) => {

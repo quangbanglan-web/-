@@ -42,6 +42,8 @@ import { ContactsModal } from './components/legal/ContactsModal';
 import { User } from './types/auth';
 import { authFetch, fetchCurrentUser, getStoredToken, removeStoredToken } from './utils/auth';
 import { confirmSandboxPayment } from './utils/payment';
+import { generateId } from './utils/uuid';
+import { CanvasErrorBoundary } from './components/CanvasErrorBoundary';
 import { X, LoaderCircle } from 'lucide-react';
 
 const ALGEBRA_STORAGE_KEY = 'mathboard_algebra_pages_v3';
@@ -264,10 +266,30 @@ export default function App() {
   const currentPageId = subjectMode === 'algebra' ? currentAlgebraPageId : currentGeometryPageId;
   const setCurrentPageId = subjectMode === 'algebra' ? setCurrentAlgebraPageId : setCurrentGeometryPageId;
 
-  const currentPage = useMemo(
-    () => pages.find((p) => p.id === currentPageId) || pages[0],
-    [pages, currentPageId]
-  );
+  const currentPage = useMemo<PageData>(() => {
+    const found = pages.find((p) => p.id === currentPageId) || pages[0];
+    if (found) {
+      return {
+        ...found,
+        strokes: Array.isArray(found.strokes) ? found.strokes : [],
+        mathElements: Array.isArray(found.mathElements) ? found.mathElements : [],
+        graphs: Array.isArray(found.graphs) ? found.graphs : [],
+        pan: found.pan && typeof found.pan.x === 'number' && typeof found.pan.y === 'number'
+          ? found.pan
+          : { x: window.innerWidth ? window.innerWidth / 3 : 200, y: 150 },
+        zoom: typeof found.zoom === 'number' && found.zoom > 0 ? found.zoom : 1,
+      };
+    }
+    return {
+      id: `${subjectMode}-page-fallback`,
+      title: 'Лист 1',
+      strokes: [],
+      mathElements: [],
+      graphs: [],
+      pan: { x: window.innerWidth ? window.innerWidth / 3 : 200, y: 150 },
+      zoom: 1,
+    };
+  }, [pages, currentPageId, subjectMode]);
 
   const markDirty = () => {
     if (!activeBoard) return;
@@ -418,7 +440,7 @@ export default function App() {
   };
 
   const makeEmptyPage = (mode: SubjectMode): PageData => ({
-    id: `${mode}-page-${crypto.randomUUID()}`,
+    id: `${mode}-page-${generateId()}`,
     title: 'Лист 1',
     strokes: [],
     mathElements: [],
@@ -431,8 +453,9 @@ export default function App() {
 
   const activateBoard = (board: SavedBoardRecord) => {
     try {
-      console.log('[activateBoard] Activating board:', board.id, board.title);
-      let data = board.data;
+      console.log('Opening board ID:', board.id);
+      console.log('Board fetched:', board.data || board);
+      let data: any = board.data;
       if (typeof data === 'string') {
         try {
           data = JSON.parse(data);
@@ -441,38 +464,69 @@ export default function App() {
           data = {};
         }
       }
+      if (!data || typeof data !== 'object') {
+        data = {};
+      }
+
       const mode: SubjectMode = board.subject === 'geometry' || data?.subjectMode === 'geometry'
         ? 'geometry'
         : 'algebra';
-      const savedPages = mode === 'geometry' ? data?.geometryPages : data?.algebraPages;
-      const restoredPages = Array.isArray(savedPages) && savedPages.length ? savedPages : [makeEmptyPage(mode)];
-      const pageId = mode === 'geometry'
-        ? data?.currentGeometryPageId || restoredPages[0].id
-        : data?.currentAlgebraPageId || restoredPages[0].id;
-      const restoredPage = restoredPages.find((page) => page.id === pageId) || restoredPages[0];
+      const rawPages = mode === 'geometry' ? data?.geometryPages : data?.algebraPages;
+      const validPages: PageData[] = Array.isArray(rawPages) && rawPages.length > 0
+        ? rawPages.map((p: any, idx: number) => ({
+            id: typeof p?.id === 'string' && p.id ? p.id : `${mode}-page-${idx + 1}`,
+            title: typeof p?.title === 'string' && p.title ? p.title : `Лист ${idx + 1}`,
+            strokes: Array.isArray(p?.strokes) ? p.strokes : [],
+            mathElements: Array.isArray(p?.mathElements) ? p.mathElements : [],
+            graphs: Array.isArray(p?.graphs) ? p.graphs : [],
+            pan: p?.pan && typeof p.pan.x === 'number' && typeof p.pan.y === 'number'
+              ? p.pan
+              : { x: window.innerWidth ? window.innerWidth / 3 : 200, y: 150 },
+            zoom: typeof p?.zoom === 'number' && p.zoom > 0 ? p.zoom : 1,
+          }))
+        : [makeEmptyPage(mode)];
 
-      setAlgebraPages(mode === 'algebra' ? restoredPages : []);
-      setGeometryPages(mode === 'geometry' ? restoredPages : []);
-      setCurrentAlgebraPageId(mode === 'algebra' ? pageId : '');
-      setCurrentGeometryPageId(mode === 'geometry' ? pageId : '');
+      const pageId = (mode === 'geometry' ? data?.currentGeometryPageId : data?.currentAlgebraPageId)
+        || validPages[0].id;
+      const restoredPage = validPages.find((page) => page.id === pageId) || validPages[0];
+
+      setAlgebraPages(mode === 'algebra' ? validPages : []);
+      setGeometryPages(mode === 'geometry' ? validPages : []);
+      setCurrentAlgebraPageId(mode === 'algebra' ? restoredPage.id : '');
+      setCurrentGeometryPageId(mode === 'geometry' ? restoredPage.id : '');
       setSubjectMode(mode);
       setPan(restoredPage.pan || { x: 200, y: 150 });
       setZoom(restoredPage.zoom || 1);
       setUndoStack([]);
       setRedoStack([]);
-      setActiveBoard({ id: board.id, subject: board.subject, title: board.title });
-      setSelectedSubjectId(board.subject);
+      setActiveBoard({ id: board.id, subject: board.subject || 'math', title: board.title || 'Новый урок' });
+      setSelectedSubjectId(board.subject || 'math');
       setSubjects((existing) => existing.some((subject) => subject.id === board.subject)
         ? existing
-        : [...existing, { id: board.subject, label: board.subject }]);
+        : [...existing, { id: board.subject || 'math', label: board.subject || 'Математика' }]);
       dirtyRef.current = false;
       setSaveStatus('saved');
       setBoardUrl(board.id);
       setActiveView('board');
-      console.log('[activateBoard] Switched activeView to board successfully!');
+      console.log('[activateBoard] Switched activeView to board successfully! Current activeBoard ID:', board.id);
     } catch (err) {
-      console.error('[activateBoard] Error activating board:', err);
-      setBoardMessage('Ошибка при загрузке доски на холст');
+      console.error('[activateBoard] Error activating board, applying empty board fallback:', err);
+      const fallbackMode: SubjectMode = board.subject === 'geometry' ? 'geometry' : 'algebra';
+      const emptyPage = makeEmptyPage(fallbackMode);
+      setAlgebraPages(fallbackMode === 'algebra' ? [emptyPage] : []);
+      setGeometryPages(fallbackMode === 'geometry' ? [emptyPage] : []);
+      setCurrentAlgebraPageId(fallbackMode === 'algebra' ? emptyPage.id : '');
+      setCurrentGeometryPageId(fallbackMode === 'geometry' ? emptyPage.id : '');
+      setSubjectMode(fallbackMode);
+      setPan(emptyPage.pan);
+      setZoom(1);
+      setUndoStack([]);
+      setRedoStack([]);
+      setActiveBoard({ id: board.id, subject: board.subject || 'math', title: board.title || 'Новый урок' });
+      dirtyRef.current = false;
+      setSaveStatus('saved');
+      setBoardUrl(board.id);
+      setActiveView('board');
     }
   };
 
@@ -504,12 +558,14 @@ export default function App() {
       return;
     }
     let isActive = true;
+    console.log('Opening board ID:', boardId);
     authFetch(`/api/boards/${encodeURIComponent(boardId)}`, {}, handleLogout)
       .then((response) => {
         if (!response.ok) throw new Error(response.status === 404 ? 'Доска не найдена' : `Ошибка загрузки: ${response.status}`);
         return response.json();
       })
       .then((board: SavedBoardRecord) => {
+        console.log('Board fetched:', board.data || board);
         if (isActive) activateBoard(board);
       })
       .catch((error: Error) => {
@@ -690,27 +746,37 @@ export default function App() {
         height,
       };
 
-      // 1. Draw Infinite Squared Grid (or pure white)
-      drawInfiniteGrid(ctx, viewport, theme, baseCellSize);
+      try {
+        // 1. Draw Infinite Squared Grid (or pure white)
+        drawInfiniteGrid(ctx, viewport, theme, baseCellSize);
 
-      // 2. Draw Math Function Plots (Algebra)
-      currentPage.graphs.forEach((graph) => {
-        drawGraphPlot(ctx, graph, viewport);
-      });
+        // 2. Draw Math Function Plots (Algebra)
+        if (Array.isArray(currentPage?.graphs)) {
+          currentPage.graphs.forEach((graph) => {
+            if (graph) drawGraphPlot(ctx, graph, viewport);
+          });
+        }
 
-      // 3. Draw Completed Strokes
-      currentPage.strokes.forEach((stroke) => {
-        drawStroke(ctx, stroke, viewport);
-      });
+        // 3. Draw Completed Strokes
+        if (Array.isArray(currentPage?.strokes)) {
+          currentPage.strokes.forEach((stroke) => {
+            if (stroke && Array.isArray(stroke.points)) {
+              drawStroke(ctx, stroke, viewport);
+            }
+          });
+        }
 
-      // 4. Draw Current Live Stroke
-      if (currentStroke) {
-        drawStroke(ctx, currentStroke, viewport);
-      }
+        // 4. Draw Current Live Stroke
+        if (currentStroke && Array.isArray(currentStroke.points)) {
+          drawStroke(ctx, currentStroke, viewport);
+        }
 
-      // 5. Draw Laser Trail
-      if (laserPoints.length > 0) {
-        drawLaserTrail(ctx, laserPoints, viewport);
+        // 5. Draw Laser Trail
+        if (Array.isArray(laserPoints) && laserPoints.length > 0) {
+          drawLaserTrail(ctx, laserPoints, viewport);
+        }
+      } catch (renderError) {
+        console.error('[Canvas render error]:', renderError);
       }
 
       ctx.restore();
@@ -1023,7 +1089,7 @@ export default function App() {
   const handleSaveBoard = async (): Promise<boolean> => {
     if (!activeBoard || !currentPage) return false;
     setSaveStatus('saving');
-    const id = activeBoard.id || crypto.randomUUID();
+    const id = activeBoard.id || generateId();
     const persistedPages = pages.map((page) => page.id === currentPageId ? { ...page, pan, zoom } : page);
     const data: SavedBoardData = {
       subjectMode,
@@ -1087,7 +1153,7 @@ export default function App() {
 
   const handleLoadBoard = useCallback(async (id: string) => {
     try {
-      console.log('[handleLoadBoard] Fetching board from server:', id);
+      console.log('Opening board ID:', id);
       const response = await authFetch(`/api/boards/${encodeURIComponent(id)}`, {}, handleLogout);
       if (!response.ok) {
         const errText = await response.text().catch(() => '');
@@ -1095,7 +1161,7 @@ export default function App() {
         throw new Error(response.status === 404 ? 'Доска не найдена' : `Ошибка загрузки (${response.status})`);
       }
       const boardData = (await response.json()) as SavedBoardRecord;
-      console.log('[handleLoadBoard] Received board from server:', boardData.id, boardData.title);
+      console.log('Board fetched:', boardData.data || boardData);
       activateBoard(boardData);
     } catch (error) {
       console.error('[handleLoadBoard] Exception loading board:', error);
@@ -1105,14 +1171,9 @@ export default function App() {
   }, [handleLogout]);
 
   const handleRequestOpenBoard = (id: string) => {
-    console.log('[handleRequestOpenBoard] Requested to open board:', id, 'is_pro:', currentUser?.is_pro);
-    if (currentUser?.is_pro) {
-      void handleLoadBoard(id);
-    } else {
-      pendingBoardIdRef.current = id;
-      setPendingBoardIdToOpen(id);
-      setIsInterstitialOpen(true);
-    }
+    console.log('Opening board ID:', id);
+    // Переход на доску происходит СРАЗУ, без блокирующих таймеров
+    void handleLoadBoard(id);
   };
 
   const handleProceedFromInterstitial = useCallback(() => {
@@ -1190,7 +1251,7 @@ export default function App() {
   };
 
   const handleAddSubject = (label: string) => {
-    const subject = { id: `custom-${crypto.randomUUID()}`, label };
+    const subject = { id: `custom-${generateId()}`, label };
     setSubjects((existing) => [...existing, subject]);
     setSelectedSubjectId(subject.id);
   };
@@ -1321,53 +1382,40 @@ export default function App() {
         />
       ))}
 
-      {activeView === 'board' && activeBoard && (
-        <BoardHeader
-          subjectLabel={labelForSubject(activeBoard.subject)}
-          title={activeBoard.title}
-          saveStatus={saveStatus}
-          pages={pages}
-          currentPageId={currentPageId}
-          theme={theme}
-          zoom={zoom}
-          isFullscreen={isFullscreen}
-          onBack={() => { void handleReturnToDashboard(); }}
-          onRename={handleRenameActiveBoard}
-          onSave={() => { void handleSaveBoard(); }}
-          onSelectPage={(id) => {
-            setCurrentPageId(id);
-            const page = pages.find((item) => item.id === id);
-            if (!page) return;
-            setPan(page.pan || { x: 200, y: 150 });
-            setZoom(page.zoom || 1);
-            markDirty();
-          }}
-          onAddPage={handleAddPage}
-          onDeletePage={handleDeletePage}
-          onZoomIn={() => { markDirty(); setZoom((value) => Math.min(5, value * 1.2)); }}
-          onZoomOut={() => { markDirty(); setZoom((value) => Math.max(0.2, value / 1.2)); }}
-          onResetZoom={() => { markDirty(); setZoom(1); setPan({ x: window.innerWidth / 3, y: 150 }); }}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-          onClearPage={handleClearPage}
-          onExportPNG={handleExportPNG}
-          onToggleFullscreen={handleToggleFullscreen}
-        />
-      )}
-
-      {boardMessage && (
-        <div
-          role="status"
-          className="fixed bottom-5 left-1/2 z-[70] -translate-x-1/2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg"
-        >
-          {boardMessage}
-          <button onClick={() => setBoardMessage('')} className="ml-3 text-slate-300 hover:text-white" aria-label="Закрыть сообщение">
-            <X className="inline h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-
       {activeView === 'board' && (
-        <>
+        <CanvasErrorBoundary onReturnToDashboard={() => setActiveView('dashboard')}>
+          {activeBoard && (
+            <BoardHeader
+              subjectLabel={labelForSubject(activeBoard.subject)}
+              title={activeBoard.title}
+              saveStatus={saveStatus}
+              pages={pages}
+              currentPageId={currentPageId}
+              theme={theme}
+              zoom={zoom}
+              isFullscreen={isFullscreen}
+              onBack={() => { void handleReturnToDashboard(); }}
+              onRename={handleRenameActiveBoard}
+              onSave={() => { void handleSaveBoard(); }}
+              onSelectPage={(id) => {
+                setCurrentPageId(id);
+                const page = pages.find((item) => item.id === id);
+                if (!page) return;
+                setPan(page.pan || { x: 200, y: 150 });
+                setZoom(page.zoom || 1);
+                markDirty();
+              }}
+              onAddPage={handleAddPage}
+              onDeletePage={handleDeletePage}
+              onZoomIn={() => { markDirty(); setZoom((value) => Math.min(5, value * 1.2)); }}
+              onZoomOut={() => { markDirty(); setZoom((value) => Math.max(0.2, value / 1.2)); }}
+              onResetZoom={() => { markDirty(); setZoom(1); setPan({ x: window.innerWidth / 3, y: 150 }); }}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+              onClearPage={handleClearPage}
+              onExportPNG={handleExportPNG}
+              onToggleFullscreen={handleToggleFullscreen}
+            />
+          )}
       {/* 3. Main Drawing Canvas */}
       <canvas
         ref={canvasRef}
@@ -1487,7 +1535,19 @@ export default function App() {
           })
         }
       />
-        </>
+        </CanvasErrorBoundary>
+      )}
+
+      {boardMessage && (
+        <div
+          role="status"
+          className="fixed bottom-5 left-1/2 z-[70] -translate-x-1/2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg"
+        >
+          {boardMessage}
+          <button onClick={() => setBoardMessage('')} className="ml-3 text-slate-300 hover:text-white" aria-label="Закрыть сообщение">
+            <X className="inline h-3.5 w-3.5" />
+          </button>
+        </div>
       )}
 
       {/* 7. Ads and Subscription Modals */}
