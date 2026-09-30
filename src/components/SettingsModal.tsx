@@ -56,7 +56,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const backgrounds: Array<{ id: BoardBackground; label: string; description: string; pro?: boolean; color: string }> = [
     { id: 'grid', label: 'В клетку', description: 'Тетрадный лист', color: '#f7f9fc' },
     { id: 'ruled', label: 'В линейку', description: 'Русский язык и литература', pro: true, color: '#f7fbff' },
-    { id: 'mm', label: 'Миллиметровка', description: 'Инженерная сетка', color: '#f7f9fc' },
+    { id: 'mm', label: 'Миллиметровка', description: 'Инженерная сетка', pro: true, color: '#f7f9fc' },
     { id: 'clean', label: 'Чистый лист', description: 'Без разметки', color: '#ffffff' },
     { id: 'map-world', label: 'Карта мира', description: 'Контурная карта', pro: true, color: '#eff6f8' },
     { id: 'map-russia', label: 'Карта РФ', description: 'Контурная карта', pro: true, color: '#eff6f8' },
@@ -100,12 +100,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {backgrounds.map((background) => {
                 const locked = !!background.pro && !isPro;
+                const isSelected =
+                  boardBackground === background.id ||
+                  (background.id === 'grid' && boardBackground === 'math_grid') ||
+                  (background.id === 'mm' && boardBackground === 'millimeter') ||
+                  (background.id === 'map-world' && boardBackground === 'map_world') ||
+                  (background.id === 'map-russia' && boardBackground === 'map_russia');
                 return (
                   <button
                     key={background.id}
                     onClick={() => locked ? onOpenSubscription?.() : onChangeBoardBackground(background.id)}
                     className={`relative flex min-h-14 items-center gap-2 rounded-lg border p-2 text-left transition ${
-                      boardBackground === background.id ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700'
+                      isSelected ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700'
                     } ${locked ? 'opacity-70' : 'hover:border-blue-300'}`}
                   >
                     <span className="h-8 w-8 shrink-0 border border-slate-300" style={{ backgroundColor: background.color, backgroundImage: background.id === 'grid' ? 'linear-gradient(#c8d6ed 1px, transparent 1px), linear-gradient(90deg, #c8d6ed 1px, transparent 1px)' : undefined, backgroundSize: '8px 8px' }} />

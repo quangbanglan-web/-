@@ -591,12 +591,41 @@ app.post('/api/ads/impression', (req: Request, res: Response) => {
 const handleCreatePayment = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
+    const userEmail = req.user!.email || (database.prepare('SELECT email FROM users WHERE id = ?').get(userId) as any)?.email || 'user@doska-edu.ru';
     const idempotenceKey = randomUUID();
 
-    // Если заданы рабочие ключи ЮKassa в .env: отправляем запрос к официальному API
-    if (YOOKASSA_SHOP_ID && YOOKASSA_SECRET_KEY && YOOKASSA_SHOP_ID !== 'test_shop_id') {
+    const shopId = process.env.YOOKASSA_SHOP_ID || YOOKASSA_SHOP_ID;
+    const secretKey = process.env.YOOKASSA_SECRET_KEY || YOOKASSA_SECRET_KEY;
+    const returnUrl = (process.env.BASE_URL || 'https://doska-edu.ru').replace(/\/$/, '') + '/?payment=success';
+
+    // Если заданы рабочие ключи ЮKassa в .env: отправляем боевой запрос с чеком по 54-ФЗ
+    if (shopId && secretKey && shopId !== 'test_shop_id') {
       try {
-        const basicAuth = Buffer.from(`${YOOKASSA_SHOP_ID}:${YOOKASSA_SECRET_KEY}`).toString('base64');
+        const basicAuth = Buffer.from(`${shopId}:${secretKey}`).toString('base64');
+        const yooPayload = {
+          amount: { value: '99.00', currency: 'RUB' },
+          capture: true,
+          confirmation: {
+            type: 'redirect',
+            return_url: returnUrl,
+          },
+          description: 'Подписка PRO на 30 дней (сервис DOSKA)',
+          metadata: { userId, user_id: userId },
+          receipt: {
+            customer: { email: userEmail },
+            items: [
+              {
+                description: 'Доступ к тарифу PRO на 30 дней',
+                quantity: '1.00',
+                amount: { value: '99.00', currency: 'RUB' },
+                vat_code: 1,
+                payment_mode: 'full_payment',
+                payment_subject: 'service',
+              },
+            ],
+          },
+        };
+
         const yooResponse = await fetch('https://api.yookassa.ru/v3/payments', {
           method: 'POST',
           headers: {
@@ -604,17 +633,7 @@ const handleCreatePayment = async (req: AuthRequest, res: Response) => {
             'Idempotence-Key': idempotenceKey,
             'Authorization': `Basic ${basicAuth}`,
           },
-          body: JSON.stringify({
-            amount: { value: '99.00', currency: 'RUB' },
-            capture: true,
-            save_payment_method: true,
-            description: 'Подписка DOSKA PRO на 1 месяц',
-            metadata: { user_id: userId },
-            confirmation: {
-              type: 'redirect',
-              return_url: `${BASE_URL}/?payment=success`,
-            },
-          }),
+          body: JSON.stringify(yooPayload),
         });
 
         const yooData = (await yooResponse.json()) as any;
@@ -668,7 +687,7 @@ app.post('/api/payments/webhook', (req: Request, res: Response) => {
 
     if (event === 'payment.succeeded' && paymentObj) {
       const paymentId = paymentObj.id || randomUUID();
-      const userId = paymentObj.metadata?.user_id;
+      const userId = paymentObj.metadata?.userId || paymentObj.metadata?.user_id;
       const paymentMethodId = paymentObj.payment_method?.id || ('pm_' + randomUUID());
       const isSaved = paymentObj.payment_method?.saved !== false;
 
@@ -679,19 +698,21 @@ app.post('/api/payments/webhook', (req: Request, res: Response) => {
           ON CONFLICT(id) DO UPDATE SET status = 'succeeded'
         `).run(paymentId, userId);
 
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
         // Обновляем пользователя: is_pro = 1, pro_expires_at = +30 дней
         database.prepare(`
           UPDATE users 
-          SET is_pro = 1, pro_expires_at = datetime('now', '+30 days')
+          SET is_pro = 1, pro_expires_at = ?
           WHERE id = ?
-        `).run(userId);
+        `).run(expiresAt, userId);
 
         // Сохраняем подписку
         const subId = 'sub_' + randomUUID();
         database.prepare(`
           INSERT INTO subscriptions (id, user_id, payment_method_id, status, next_billing_date)
-          VALUES (?, ?, ?, 'active', datetime('now', '+30 days'))
-        `).run(subId, userId, isSaved ? paymentMethodId : null);
+          VALUES (?, ?, ?, 'active', ?)
+        `).run(subId, userId, isSaved ? paymentMethodId : null, expiresAt);
       }
     }
 

@@ -190,7 +190,10 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
               </div>
             )}
           </div>
-          <button onClick={onShare} title="Поделиться уроком" className={buttonClass}><Share2 className="h-4 w-4" /></button>
+          <button onClick={onShare} title="Поделиться доской" className={buttonClass}>
+            <Share2 className="h-4 w-4" />
+            <span className="hidden md:inline text-xs font-semibold">Поделиться</span>
+          </button>
           <div className="relative">
             <button onClick={() => setShowExportMenu((open) => !open)} title="Экспорт" aria-expanded={showExportMenu} className={buttonClass}><Download className="h-4 w-4" /><ChevronDown className="h-3 w-3" /></button>
             {showExportMenu && (

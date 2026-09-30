@@ -34,7 +34,7 @@ import { GraphPlotModal } from './components/GraphPlotModal';
 import { SettingsModal } from './components/SettingsModal';
 import { ToolbarCustomizerModal } from './components/ToolbarCustomizerModal';
 import { AuthModal } from './components/AuthModal';
-import { BottomBannerAd } from './components/ads/BottomBannerAd';
+import { AdBanner } from './components/ads/AdBanner';
 import { InterstitialAdModal } from './components/ads/InterstitialAdModal';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { AdminPanel } from './components/AdminPanel';
@@ -111,127 +111,273 @@ const createAutoTitle = (subjectLabel: string) => {
   return `${subjectLabel} — Урок от ${timestamp}`;
 };
 
-const isPointNearStroke = (stroke: Stroke, point: Point, radius: number) => {
+const isPointNearStroke = (stroke: Stroke, point: Point, radius: number): boolean => {
   const points = stroke.points;
   if (!points.length) return false;
   const tool = stroke.tool;
-  const shapeTools = ['line', 'dashed-line', 'arrow', 'rect', 'circle', 'triangle', 'right-triangle', 'axes',
-    'trapezoid', 'right-trapezoid', 'parallelogram', 'rhombus', 'box3d', 'cylinder3d', 'pyramid3d'];
+  const shapeTools = [
+    'line',
+    'dashed-line',
+    'arrow',
+    'rect',
+    'circle',
+    'triangle',
+    'right-triangle',
+    'axes',
+    'trapezoid',
+    'right-trapezoid',
+    'parallelogram',
+    'rhombus',
+    'box3d',
+    'cylinder3d',
+    'pyramid3d',
+  ];
 
   const distanceToSegment = (start: Point, end: Point) => {
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     const lengthSquared = dx * dx + dy * dy;
-    const t = lengthSquared ? Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared)) : 0;
+    const t = lengthSquared
+      ? Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared))
+      : 0;
     return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
   };
 
   const isPointInPoly = (pt: Point, poly: Point[]) => {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const xi = poly[i].x, yi = poly[i].y;
-      const xj = poly[j].x, yj = poly[j].y;
-      const intersect = ((yi > pt.y) !== (yj > pt.y)) &&
-        (pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi);
+      const xi = poly[i].x;
+      const yi = poly[i].y;
+      const xj = poly[j].x;
+      const yj = poly[j].y;
+      const intersect =
+        yi > pt.y !== yj > pt.y &&
+        pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi;
       if (intersect) inside = !inside;
     }
     return inside;
   };
 
-  let paths: Point[][] = [points];
   if (shapeTools.includes(tool) && points.length >= 2) {
-    const [start, end] = [points[0], points[points.length - 1]];
+    const start = points[0];
+    const end = points[points.length - 1];
     const left = Math.min(start.x, end.x);
     const right = Math.max(start.x, end.x);
     const top = Math.min(start.y, end.y);
     const bottom = Math.max(start.y, end.y);
-    const width = right - left;
-    const height = bottom - top;
+    const width = Math.max(1, right - left);
+    const height = Math.max(1, bottom - top);
 
-    // Check interior hit-test for closed shapes (clicking inside the shape immediately erases it)
+    if (tool === 'line' || tool === 'dashed-line') {
+      return distanceToSegment(start, end) <= radius;
+    }
+
+    if (tool === 'arrow') {
+      if (distanceToSegment(start, end) <= radius) return true;
+      const angle = Math.atan2(end.y - start.y, end.x - start.x);
+      const headLen = Math.max(16, stroke.width * 3.5);
+      const p1 = {
+        x: end.x - headLen * Math.cos(angle - Math.PI / 6),
+        y: end.y - headLen * Math.sin(angle - Math.PI / 6),
+      };
+      const p2 = {
+        x: end.x - headLen * Math.cos(angle + Math.PI / 6),
+        y: end.y - headLen * Math.sin(angle + Math.PI / 6),
+      };
+      return (
+        distanceToSegment(end, p1) <= radius ||
+        distanceToSegment(end, p2) <= radius ||
+        distanceToSegment(p1, p2) <= radius ||
+        isPointInPoly(point, [end, p1, p2])
+      );
+    }
+
     if (tool === 'rect') {
-      if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) return true;
-      paths = [[{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }, { x: left, y: top }]];
-    } else if (tool === 'circle') {
-      const rx = width / 2 || 1;
-      const ry = height / 2 || 1;
+      const rectEdges: [Point, Point][] = [
+        [{ x: left, y: top }, { x: right, y: top }],
+        [{ x: right, y: top }, { x: right, y: bottom }],
+        [{ x: right, y: bottom }, { x: left, y: bottom }],
+        [{ x: left, y: bottom }, { x: left, y: top }],
+      ];
+      if (rectEdges.some(([p1, p2]) => distanceToSegment(p1, p2) <= radius)) return true;
+      return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
+    }
+
+    if (tool === 'circle') {
+      const rx = width / 2;
+      const ry = height / 2;
       const cx = (left + right) / 2;
       const cy = (top + bottom) / 2;
+      if (Math.hypot(point.x - cx, point.y - cy) <= Math.max(radius, 6)) return true;
       if (((point.x - cx) / rx) ** 2 + ((point.y - cy) / ry) ** 2 <= 1) return true;
-      const ellipse = (cyPos: number, rX = rx, rY = ry) => Array.from({ length: 33 }, (_, index) => {
-        const angle = (index / 32) * Math.PI * 2;
-        return { x: cx + Math.cos(angle) * rX, y: cyPos + Math.sin(angle) * rY };
-      });
-      paths = [ellipse(cy)];
-    } else if (tool === 'cylinder3d') {
-      if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) return true;
-      const ellipse = (cyPos: number, rX = width / 2, rY = height * 0.16) => Array.from({ length: 33 }, (_, index) => {
-        const angle = (index / 32) * Math.PI * 2;
-        return { x: (left + right) / 2 + Math.cos(angle) * rX, y: cyPos + Math.sin(angle) * rY };
-      });
-      paths = [
-        ellipse(top + height * 0.16),
-        ellipse(bottom - height * 0.16),
-        [{ x: left, y: top + height * 0.16 }, { x: left, y: bottom - height * 0.16 }],
-        [{ x: right, y: top + height * 0.16 }, { x: right, y: bottom - height * 0.16 }],
-      ];
-    } else if (tool === 'triangle') {
+      const angle = Math.atan2((point.y - cy) / ry, (point.x - cx) / rx);
+      const closestPt = {
+        x: cx + rx * Math.cos(angle),
+        y: cy + ry * Math.sin(angle),
+      };
+      return Math.hypot(point.x - closestPt.x, point.y - closestPt.y) <= radius;
+    }
+
+    if (tool === 'triangle') {
       const poly = [{ x: (left + right) / 2, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
       if (isPointInPoly(point, poly)) return true;
-      paths = [[...poly, poly[0]]];
-    } else if (tool === 'right-triangle') {
+      const edges: [Point, Point][] = [
+        [poly[0], poly[1]],
+        [poly[1], poly[2]],
+        [poly[2], poly[0]],
+      ];
+      return edges.some(([p1, p2]) => distanceToSegment(p1, p2) <= radius);
+    }
+
+    if (tool === 'right-triangle') {
       const poly = [{ x: left, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
       if (isPointInPoly(point, poly)) return true;
-      paths = [[...poly, poly[0]]];
-    } else if (tool === 'trapezoid' || tool === 'right-trapezoid' || tool === 'parallelogram' || tool === 'rhombus') {
+      const edges: [Point, Point][] = [
+        [poly[0], poly[1]],
+        [poly[1], poly[2]],
+        [poly[2], poly[0]],
+      ];
+      return edges.some(([p1, p2]) => distanceToSegment(p1, p2) <= radius);
+    }
+
+    if (tool === 'axes') {
+      const cx = start.x;
+      const cy = start.y;
+      const r = Math.max(80, Math.hypot(end.x - start.x, end.y - start.y));
+      if (distanceToSegment({ x: cx - r, y: cy }, { x: cx + r, y: cy }) <= radius) return true;
+      if (distanceToSegment({ x: cx, y: cy - r }, { x: cx, y: cy + r }) <= radius) return true;
+      if (Math.hypot(point.x - cx, point.y - cy) <= radius * 2) return true;
+      return false;
+    }
+
+    if (tool === 'trapezoid') {
       const inset = width * 0.2;
-      const outline = tool === 'trapezoid'
-        ? [{ x: left + inset, y: top }, { x: right - inset, y: top }, { x: right, y: bottom }, { x: left, y: bottom }]
-        : tool === 'right-trapezoid'
-          ? [{ x: left, y: top }, { x: right - inset, y: top }, { x: right, y: bottom }, { x: left, y: bottom }]
-          : tool === 'parallelogram'
-            ? [{ x: left + inset, y: top }, { x: right, y: top }, { x: right - inset, y: bottom }, { x: left, y: bottom }]
-            : [{ x: (left + right) / 2, y: top }, { x: right, y: (top + bottom) / 2 }, { x: (left + right) / 2, y: bottom }, { x: left, y: (top + bottom) / 2 }];
-      if (isPointInPoly(point, outline)) return true;
-      paths = [[...outline, outline[0]]];
-    } else if (tool === 'box3d') {
+      const poly = [
+        { x: left + inset, y: top },
+        { x: right - inset, y: top },
+        { x: right, y: bottom },
+        { x: left, y: bottom },
+      ];
+      if (isPointInPoly(point, poly)) return true;
+      const edges: [Point, Point][] = [
+        [poly[0], poly[1]],
+        [poly[1], poly[2]],
+        [poly[2], poly[3]],
+        [poly[3], poly[0]],
+      ];
+      return edges.some(([p1, p2]) => distanceToSegment(p1, p2) <= radius);
+    }
+
+    if (tool === 'right-trapezoid') {
+      const poly = [
+        { x: left, y: top },
+        { x: left + width * 0.6, y: top },
+        { x: right, y: bottom },
+        { x: left, y: bottom },
+      ];
+      if (isPointInPoly(point, poly)) return true;
+      const edges: [Point, Point][] = [
+        [poly[0], poly[1]],
+        [poly[1], poly[2]],
+        [poly[2], poly[3]],
+        [poly[3], poly[0]],
+      ];
+      return edges.some(([p1, p2]) => distanceToSegment(p1, p2) <= radius);
+    }
+
+    if (tool === 'parallelogram') {
+      const shiftX = width * 0.25;
+      const poly = [
+        { x: left + shiftX, y: top },
+        { x: right, y: top },
+        { x: right - shiftX, y: bottom },
+        { x: left, y: bottom },
+      ];
+      if (isPointInPoly(point, poly)) return true;
+      const edges: [Point, Point][] = [
+        [poly[0], poly[1]],
+        [poly[1], poly[2]],
+        [poly[2], poly[3]],
+        [poly[3], poly[0]],
+      ];
+      return edges.some(([p1, p2]) => distanceToSegment(p1, p2) <= radius);
+    }
+
+    if (tool === 'rhombus') {
+      const cx = (left + right) / 2;
+      const cy = (top + bottom) / 2;
+      const poly = [
+        { x: cx, y: top },
+        { x: right, y: cy },
+        { x: cx, y: bottom },
+        { x: left, y: cy },
+      ];
+      if (isPointInPoly(point, poly)) return true;
+      const edges: [Point, Point][] = [
+        [poly[0], poly[1]],
+        [poly[1], poly[2]],
+        [poly[2], poly[3]],
+        [poly[3], poly[0]],
+      ];
+      return edges.some(([p1, p2]) => distanceToSegment(p1, p2) <= radius);
+    }
+
+    if (tool === 'box3d') {
       const depth = Math.min(width, height) * 0.35;
       const ox = depth * 0.7;
       const oy = -depth * 0.5;
-      if (point.x >= left && point.x <= right + ox && point.y >= top + oy && point.y <= bottom) return true;
-      const a = { x: left, y: top };
-      const b = { x: right, y: top };
-      const c = { x: right, y: bottom };
-      const d = { x: left, y: bottom };
-      const a2 = { x: left + ox, y: top + oy };
-      const b2 = { x: right + ox, y: top + oy };
-      const c2 = { x: right + ox, y: bottom + oy };
-      const d2 = { x: left + ox, y: bottom + oy };
-      paths = [[a, b, c, d, a], [a2, b2, c2, d2, a2], [a, a2], [b, b2], [c, c2], [d, d2]];
-    } else if (tool === 'pyramid3d') {
-      if (point.x >= left && point.x <= right && point.y >= top && point.y <= bottom) return true;
-      const apex = { x: (left + right) / 2, y: top };
-      const base = [{ x: left, y: bottom }, { x: right, y: bottom }, { x: right - width * 0.2, y: bottom - height * 0.2 }, { x: left + width * 0.2, y: bottom - height * 0.2 }];
-      paths = [[...base, base[0]], [apex, base[0]], [apex, base[1]], [apex, base[2]], [apex, base[3]]];
-    } else if (tool === 'line' || tool === 'dashed-line' || tool === 'arrow' || tool === 'axes') {
-      paths = [[start, end]];
+      if (
+        point.x >= left - radius &&
+        point.x <= right + ox + radius &&
+        point.y >= top + oy - radius &&
+        point.y <= bottom + radius
+      ) {
+        return true;
+      }
+    }
+
+    if (tool === 'cylinder3d') {
+      if (
+        point.x >= left - radius &&
+        point.x <= right + radius &&
+        point.y >= top - radius &&
+        point.y <= bottom + radius
+      ) {
+        return true;
+      }
+    }
+
+    if (tool === 'pyramid3d') {
+      if (
+        point.x >= left - radius &&
+        point.x <= right + radius &&
+        point.y >= top - radius &&
+        point.y <= bottom + radius
+      ) {
+        return true;
+      }
     }
   }
 
-  return paths.some((path) => {
-    if (path.length === 1) return Math.hypot(path[0].x - point.x, path[0].y - point.y) <= radius;
-    for (let index = 1; index < path.length; index++) {
-      if (distanceToSegment(path[index - 1], path[index]) <= radius) return true;
-    }
-    return false;
-  });
+  // Freehand stroke or fallback
+  for (let i = 1; i < points.length; i++) {
+    if (distanceToSegment(points[i - 1], points[i]) <= radius) return true;
+  }
+  if (points.length === 1) {
+    return Math.hypot(points[0].x - point.x, points[0].y - point.y) <= radius;
+  }
+  return false;
 };
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const initialBoardId = useRef<string | null>(new URLSearchParams(window.location.search).get('id'));
+  const initialBoardId = useRef<string | null>(
+    new URLSearchParams(window.location.search).get('id') ||
+    window.location.pathname.match(/\/board\/([^/?#]+)/)?.[1] ||
+    null
+  );
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
   const [activeView, setActiveView] = useState<'dashboard' | 'board'>('dashboard');
@@ -535,19 +681,23 @@ export default function App() {
         background?: BoardBackground;
       }
     ) => {
-      markDirty();
-      setPages((prevPages) =>
-        prevPages.map((page) => {
+      setPages((prevPages) => {
+        let changed = false;
+        const nextPages = prevPages.map((page) => {
           if (page.id !== currentPageId) return page;
           const updates = updater(page);
+          if (Object.keys(updates).length === 0) return page;
+          changed = true;
           return {
             ...page,
             ...updates,
           };
-        })
-      );
+        });
+        if (changed) markDirty();
+        return changed ? nextPages : prevPages;
+      });
     },
-    [activeBoard, currentPageId, setPages]
+    [currentPageId, setPages]
   );
 
   // Save pages to localStorage
@@ -627,6 +777,7 @@ export default function App() {
               ? p.pan
               : { x: window.innerWidth ? window.innerWidth / 3 : 200, y: 150 },
             zoom: typeof p?.zoom === 'number' && p.zoom > 0 ? p.zoom : 1,
+            background: typeof p?.background === 'string' ? p.background : 'grid',
           }))
         : [makeEmptyPage(mode)];
 
@@ -964,25 +1115,29 @@ export default function App() {
 
   // Erase strokes intersecting target point (object erasing for shapes)
   const eraseAtPoint = (worldPt: Point) => {
-    const eraseRadius = 18 / zoom;
+    const eraseRadius = Math.max(20, 28 / zoom);
 
-    const survivingStrokes = currentPage.strokes.filter(
-      (stroke) => !isPointNearStroke(stroke, worldPt, eraseRadius + stroke.width / 2)
-    );
+    updateCurrentPage((page) => {
+      const survivingStrokes = page.strokes.filter(
+        (stroke) => !isPointNearStroke(stroke, worldPt, eraseRadius + stroke.width / 2)
+      );
 
-    const survivingMath = currentPage.mathElements.filter((el) =>
-      Math.hypot(el.x - worldPt.x, el.y - worldPt.y) >= eraseRadius * 4
-    );
+      const survivingMath = page.mathElements.filter((el) =>
+        Math.hypot(el.x - worldPt.x, el.y - worldPt.y) >= eraseRadius * 4
+      );
 
-    if (
-      survivingStrokes.length !== currentPage.strokes.length ||
-      survivingMath.length !== currentPage.mathElements.length
-    ) {
-      updateCurrentPage(() => ({
+      if (
+        survivingStrokes.length === page.strokes.length &&
+        survivingMath.length === page.mathElements.length
+      ) {
+        return {};
+      }
+
+      return {
         strokes: survivingStrokes,
         mathElements: survivingMath,
-      }));
-    }
+      };
+    });
   };
 
   // Pointer Event Handlers (Real-time stabilization & smoothing + stylus pressure)
@@ -1046,7 +1201,7 @@ export default function App() {
 
     // Dynamic width for stylus pressure sensitivity
     const dynamicWidth = isPen
-      ? strokeWidth * (0.25 + 0.75 * (rawPressure || 0.5))
+      ? strokeWidth * (0.3 + 0.7 * (rawPressure || 0.5))
       : currentTool === 'highlighter' ? 18 : strokeWidth;
 
     pushUndoState();
@@ -1218,15 +1373,15 @@ export default function App() {
   // Insert Quick Math Formula
   const handleInsertQuickMath = (latex: string) => {
     pushUndoState();
-    const canvasRect = canvasRef.current?.getBoundingClientRect();
-    const centerWorld = screenToWorld(
-      canvasRect ? canvasRect.left + canvasRect.width / 2 : window.innerWidth / 2,
-      canvasRect ? canvasRect.top + canvasRect.height / 2 : window.innerHeight / 2
-    );
+    // Center world coordinates strictly at the center of the current screen:
+    // x = (-pan.x + window.innerWidth / 2) / zoom = (window.innerWidth / 2) / zoom - pan.x
+    // y = (-pan.y + window.innerHeight / 2) / zoom = (window.innerHeight / 2) / zoom - pan.y
+    const centerWorldX = (window.innerWidth / 2) / zoom - pan.x;
+    const centerWorldY = (window.innerHeight / 2) / zoom - pan.y;
     const newElement: MathElement = {
       id: `math-${Date.now()}`,
-      x: Math.round(centerWorld.x - 60),
-      y: Math.round(centerWorld.y - 40),
+      x: Math.round(centerWorldX - 75),
+      y: Math.round(centerWorldY - 35),
       latex,
       cleanText: latex,
       fontSize: 32,
@@ -1286,11 +1441,12 @@ export default function App() {
   // Insert Function Graph
   const handleInsertGraph = (formula: string, graphColor: string) => {
     pushUndoState();
-    const centerWorld = screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
+    const centerWorldX = (window.innerWidth / 2) / zoom - pan.x;
+    const centerWorldY = (window.innerHeight / 2) / zoom - pan.y;
     const newGraph: GraphPlot = {
       id: `graph-${Date.now()}`,
-      x: Math.round(centerWorld.x),
-      y: Math.round(centerWorld.y),
+      x: Math.round(centerWorldX),
+      y: Math.round(centerWorldY),
       formula,
       color: graphColor,
       rangeX: [-6, 6],
@@ -1412,7 +1568,7 @@ export default function App() {
     setBoardMessage('Поздравляем! Подписка DOSKA PRO активирована. Вся реклама отключена!');
   };
 
-  const handleCreateBoard = (subjectId = selectedSubjectId, background: BoardBackground = 'grid') => {
+  const handleCreateBoard = (subjectId = selectedSubjectId, background: BoardBackground = 'grid', customTitle?: string) => {
     const mode: SubjectMode = subjectId === 'geometry' ? 'geometry' : 'algebra';
     const subjectLabel = labelForSubject(subjectId);
     const newPage = makeEmptyPage(mode, background);
@@ -1426,7 +1582,20 @@ export default function App() {
     setUndoStack([]);
     setRedoStack([]);
     setSelectedSubjectId(subjectId);
-    setActiveBoard({ id: null, subject: subjectId, title: createAutoTitle(subjectLabel) });
+    setSubjects((existing) => existing.some((subject) => subject.id === subjectId)
+      ? existing
+      : [...existing, {
+          id: subjectId,
+          label: subjectLabel !== subjectId ? subjectLabel : (
+            subjectId === 'math' ? 'Математика / Алгебра' :
+            subjectId === 'russian' ? 'Русский язык / Литература' :
+            subjectId === 'physics' ? 'Физика' :
+            subjectId === 'geography' ? 'География / История' :
+            subjectId === 'general' ? 'Общая' : subjectId
+          ),
+        }]);
+    const title = customTitle?.trim() || createAutoTitle(subjectLabel);
+    setActiveBoard({ id: null, subject: subjectId, title });
     dirtyRef.current = true;
     setSaveStatus('unsaved');
     setBoardUrl(null);
@@ -1598,24 +1767,25 @@ export default function App() {
       const saved = await saveBoardRef.current();
       if (!saved) return;
     }
-    const boardUrl = new URL(window.location.href);
-    if (activeBoard.id) {
-      boardUrl.searchParams.set('id', activeBoard.id);
-    }
-    const lessonUrl = boardUrl.toString();
-    const text = `Приглашаю на интерактивную доску DOSKA! Ссылка на урок: ${lessonUrl}. Сервис для наглядного обучения и репетиторов: https://doska-edu.ru`;
+    const boardId = activeBoard.id || '';
+    const shareUrl = `https://doska-edu.ru/board/${boardId}`;
+    const shareText = `Приглашаю на интерактивную доску DOSKA!\nСсылка на урок: ${shareUrl}\n\nСервис для удобных онлайн-занятий и репетиторов: https://doska-edu.ru`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'Урок на DOSKA', text, url: lessonUrl });
+        await navigator.share({
+          title: 'Интерактивная доска DOSKA',
+          text: shareText,
+          url: shareUrl,
+        });
       } else {
-        await navigator.clipboard.writeText(text);
-        setBoardMessage('Текст с приглашением скопирован!');
+        await navigator.clipboard.writeText(shareText);
+        setBoardMessage('Ссылка и рекомендация сервиса скопированы!');
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return;
       try {
-        await navigator.clipboard.writeText(text);
-        setBoardMessage('Текст с приглашением скопирован!');
+        await navigator.clipboard.writeText(shareText);
+        setBoardMessage('Ссылка и рекомендация сервиса скопированы!');
       } catch {
         setBoardMessage('Не удалось скопировать приглашение.');
       }
@@ -1909,11 +2079,13 @@ export default function App() {
       )}
 
       {/* 7. Ads and Subscription Modals */}
-      <BottomBannerAd
-        isPro={Boolean(currentUser?.is_pro)}
-        onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
-        onVisibilityChange={setIsBottomBannerVisible}
-      />
+      {activeView === 'dashboard' && !currentUser?.is_pro && (
+        <AdBanner
+          isPro={Boolean(currentUser?.is_pro)}
+          onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
+          onVisibilityChange={setIsBottomBannerVisible}
+        />
+      )}
 
       <InterstitialAdModal
         isOpen={isInterstitialOpen}

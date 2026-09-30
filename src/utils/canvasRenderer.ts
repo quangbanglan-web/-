@@ -148,8 +148,8 @@ export function drawBoardBackground(
   background: BoardBackground,
   baseCellSize = 32
 ) {
-  if (background === 'grid' || background === 'clean') {
-    drawInfiniteGrid(ctx, viewport, background === 'grid' ? 'notebook' : 'clean', baseCellSize);
+  if (background === 'grid' || background === 'math_grid' || background === 'clean') {
+    drawInfiniteGrid(ctx, viewport, (background === 'grid' || background === 'math_grid') ? 'notebook' : 'clean', baseCellSize);
     return;
   }
   if (background === 'chalkboard' || background === 'blueprint') {
@@ -162,18 +162,19 @@ export function drawBoardBackground(
   ctx.fillRect(0, 0, width, height);
   ctx.save();
 
-  if (background === 'ruled' || background === 'mm') {
-    const spacing = (background === 'ruled' ? baseCellSize * 1.5 : baseCellSize / 4) * zoom;
+  if (background === 'ruled' || background === 'mm' || background === 'millimeter') {
+    const isRuled = background === 'ruled';
+    const spacing = (isRuled ? baseCellSize * 1.5 : baseCellSize / 4) * zoom;
     const originY = (pan.y * zoom) % spacing;
     const originX = (pan.x * zoom) % spacing;
     ctx.lineWidth = 1;
-    ctx.strokeStyle = background === 'ruled' ? '#b8d5ee' : '#e5b6b6';
+    ctx.strokeStyle = isRuled ? '#b8d5ee' : '#e5b6b6';
     ctx.beginPath();
     for (let y = originY; y < height; y += spacing) {
       ctx.moveTo(0, y);
       ctx.lineTo(width, y);
     }
-    if (background === 'mm') {
+    if (!isRuled) {
       ctx.strokeStyle = '#d8dfe7';
       for (let x = originX; x < width; x += spacing) {
         ctx.moveTo(x, 0);
@@ -181,7 +182,7 @@ export function drawBoardBackground(
       }
     }
     ctx.stroke();
-    if (background === 'ruled') {
+    if (isRuled) {
       const marginX = (pan.x * zoom) % (baseCellSize * 8 * zoom);
       ctx.strokeStyle = '#ef9a9a';
       ctx.beginPath();
@@ -205,7 +206,7 @@ export function drawBoardBackground(
   } else {
     ctx.fillStyle = '#eff6f8';
     ctx.fillRect(0, 0, width, height);
-    const world = background === 'map-world';
+    const world = background === 'map-world' || background === 'map_world';
     const continents = world
       ? [
           [[0.12, 0.18], [0.25, 0.12], [0.33, 0.2], [0.29, 0.34], [0.24, 0.43], [0.2, 0.58], [0.14, 0.42]],
@@ -729,7 +730,7 @@ export function drawStroke(
   if (pts.length === 1) {
     const rawP = stroke.points[0]?.pressure ?? 0.5;
     const dotW = stroke.tool === 'pen' && stroke.points[0]?.pressure !== undefined
-      ? stroke.width * (0.25 + 0.75 * rawP) * zoom
+      ? stroke.width * (0.3 + 0.7 * rawP) * zoom
       : stroke.width * zoom;
     ctx.fillStyle = stroke.color;
     ctx.beginPath();
@@ -745,7 +746,7 @@ export function drawStroke(
       const p1 = pts[i];
       const p2 = pts[i + 1];
       const pr = ((stroke.points[i]?.pressure ?? 0.5) + (stroke.points[i + 1]?.pressure ?? 0.5)) / 2;
-      ctx.lineWidth = stroke.width * (0.25 + 0.75 * pr) * zoom;
+      ctx.lineWidth = stroke.width * (0.3 + 0.7 * pr) * zoom;
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);

@@ -23,13 +23,17 @@ export type ToolType =
 
 export type BoardBackground =
   | 'grid'
+  | 'math_grid'
   | 'ruled'
   | 'mm'
+  | 'millimeter'
   | 'clean'
   | 'chalkboard'
   | 'blueprint'
   | 'map-world'
-  | 'map-russia';
+  | 'map_world'
+  | 'map-russia'
+  | 'map_russia';
 
 
 export interface Point {

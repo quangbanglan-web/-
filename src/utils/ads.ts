@@ -1,6 +1,6 @@
 import { authFetch } from './auth';
 
-export type AdType = 'banner_bottom' | 'interstitial_board_open';
+export type AdType = 'banner_bottom' | 'interstitial_board_open' | 'banner_rsya_dashboard';
 
 export async function logAdImpression(adType: AdType): Promise<boolean> {
   try {
