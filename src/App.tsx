@@ -11,6 +11,7 @@ import {
   BoardBackground,
   SubjectMode,
   ToolbarCustomization,
+  EraserMode,
 } from './types/board';
 import {
   drawInfiniteGrid,
@@ -27,6 +28,7 @@ import {
 } from './utils/strokeSmoother';
 import { Dashboard, DashboardBoard, DashboardSubject } from './components/Dashboard';
 import { BoardHeader, BoardSaveStatus, ExportFormat } from './components/BoardHeader';
+import { SlidesBar } from './components/SlidesBar';
 import { Toolbar } from './components/Toolbar';
 import { VirtualRuler, VirtualProtractor } from './components/VirtualInstruments';
 import { QuickMathModal } from './components/QuickMathModal';
@@ -119,8 +121,11 @@ const isPointNearStroke = (stroke: Stroke, point: Point, radius: number): boolea
     'line',
     'dashed-line',
     'arrow',
+    'double-arrow',
     'rect',
+    'square',
     'circle',
+    'ellipse',
     'triangle',
     'right-triangle',
     'axes',
@@ -129,7 +134,9 @@ const isPointNearStroke = (stroke: Stroke, point: Point, radius: number): boolea
     'parallelogram',
     'rhombus',
     'box3d',
+    'cube3d',
     'cylinder3d',
+    'cone3d',
     'pyramid3d',
   ];
 
@@ -172,7 +179,7 @@ const isPointNearStroke = (stroke: Stroke, point: Point, radius: number): boolea
       return distanceToSegment(start, end) <= radius;
     }
 
-    if (tool === 'arrow') {
+    if (tool === 'arrow' || tool === 'double-arrow') {
       if (distanceToSegment(start, end) <= radius) return true;
       const angle = Math.atan2(end.y - start.y, end.x - start.x);
       const headLen = Math.max(16, stroke.width * 3.5);
@@ -184,15 +191,32 @@ const isPointNearStroke = (stroke: Stroke, point: Point, radius: number): boolea
         x: end.x - headLen * Math.cos(angle + Math.PI / 6),
         y: end.y - headLen * Math.sin(angle + Math.PI / 6),
       };
-      return (
+      if (
         distanceToSegment(end, p1) <= radius ||
         distanceToSegment(end, p2) <= radius ||
         distanceToSegment(p1, p2) <= radius ||
         isPointInPoly(point, [end, p1, p2])
-      );
+      ) return true;
+
+      if (tool === 'double-arrow') {
+        const p3 = {
+          x: start.x + headLen * Math.cos(angle - Math.PI / 6),
+          y: start.y + headLen * Math.sin(angle - Math.PI / 6),
+        };
+        const p4 = {
+          x: start.x + headLen * Math.cos(angle + Math.PI / 6),
+          y: start.y + headLen * Math.sin(angle + Math.PI / 6),
+        };
+        if (
+          distanceToSegment(start, p3) <= radius ||
+          distanceToSegment(start, p4) <= radius ||
+          distanceToSegment(p3, p4) <= radius ||
+          isPointInPoly(point, [start, p3, p4])
+        ) return true;
+      }
     }
 
-    if (tool === 'rect') {
+    if (tool === 'rect' || tool === 'square') {
       const rectEdges: [Point, Point][] = [
         [{ x: left, y: top }, { x: right, y: top }],
         [{ x: right, y: top }, { x: right, y: bottom }],
@@ -203,7 +227,7 @@ const isPointNearStroke = (stroke: Stroke, point: Point, radius: number): boolea
       return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
     }
 
-    if (tool === 'circle') {
+    if (tool === 'circle' || tool === 'ellipse') {
       const rx = width / 2;
       const ry = height / 2;
       const cx = (left + right) / 2;
@@ -322,7 +346,7 @@ const isPointNearStroke = (stroke: Stroke, point: Point, radius: number): boolea
       return edges.some(([p1, p2]) => distanceToSegment(p1, p2) <= radius);
     }
 
-    if (tool === 'box3d') {
+    if (tool === 'box3d' || tool === 'cube3d') {
       const depth = Math.min(width, height) * 0.35;
       const ox = depth * 0.7;
       const oy = -depth * 0.5;
@@ -347,7 +371,7 @@ const isPointNearStroke = (stroke: Stroke, point: Point, radius: number): boolea
       }
     }
 
-    if (tool === 'pyramid3d') {
+    if (tool === 'pyramid3d' || tool === 'cone3d') {
       if (
         point.x >= left - radius &&
         point.x <= right + radius &&
@@ -421,9 +445,46 @@ export default function App() {
     setPendingBoardIdToOpen(null);
   }, []);
 
-  // Check auth session on launch
+  // Check auth session on launch and OAuth redirects
   useEffect(() => {
     let isActive = true;
+    const url = new URL(window.location.href);
+    const oauthToken = url.searchParams.get('token');
+    const authStatus = url.searchParams.get('auth');
+    const oauthError = url.searchParams.get('oauth_error');
+
+    if (oauthToken && authStatus === 'success') {
+      localStorage.setItem('auth_token', oauthToken);
+      url.searchParams.delete('token');
+      url.searchParams.delete('auth');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      fetchCurrentUser()
+        .then((user) => {
+          if (isActive && user) {
+            setCurrentUser(user);
+            setBoardMessage(`Добро пожаловать, ${user.name}!`);
+          }
+        })
+        .finally(() => {
+          if (isActive) setIsAuthChecking(false);
+        });
+      return () => {
+        isActive = false;
+      };
+    }
+
+    if (oauthError) {
+      url.searchParams.delete('oauth_error');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      if (oauthError === 'yandex_not_configured') {
+        setBoardMessage('Вход через Яндекс ID временно не настроен на сервере');
+      } else if (oauthError === 'vk_not_configured') {
+        setBoardMessage('Вход через VK ID временно не настроен на сервере');
+      } else {
+        setBoardMessage('Ошибка авторизации через внешнюю службу');
+      }
+    }
+
     const token = getStoredToken();
     if (!token) {
       setIsAuthChecking(false);
@@ -592,7 +653,9 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeType>('notebook');
   const [baseCellSize, setBaseCellSize] = useState<number>(32);
   const [palmRejection, setPalmRejection] = useState<boolean>(false);
+  const [eraserMode, setEraserMode] = useState<EraserMode>('stroke');
   const [snapToGrid, setSnapToGrid] = useState<boolean>(false);
+  const lastPenTimeRef = useRef<number>(0);
 
   // Stroke Smoothing & Beautification Settings (Restored!)
   const [autoFormatEnabled, setAutoFormatEnabled] = useState<boolean>(true);
@@ -1113,28 +1176,78 @@ export default function App() {
     return () => clearInterval(interval);
   }, [laserPoints.length]);
 
-  // Erase strokes intersecting target point (object erasing for shapes)
+  // Erase strokes intersecting target point (object erasing for shapes or stroke segments)
   const eraseAtPoint = (worldPt: Point) => {
     const eraseRadius = Math.max(20, 28 / zoom);
 
     updateCurrentPage((page) => {
-      const survivingStrokes = page.strokes.filter(
-        (stroke) => !isPointNearStroke(stroke, worldPt, eraseRadius + stroke.width / 2)
-      );
+      if (eraserMode === 'object') {
+        const survivingStrokes = page.strokes.filter(
+          (stroke) => !isPointNearStroke(stroke, worldPt, eraseRadius + stroke.width / 2)
+        );
+
+        const survivingMath = page.mathElements.filter((el) =>
+          Math.hypot(el.x - worldPt.x, el.y - worldPt.y) >= eraseRadius * 4
+        );
+
+        if (
+          survivingStrokes.length === page.strokes.length &&
+          survivingMath.length === page.mathElements.length
+        ) {
+          return {};
+        }
+
+        return {
+          strokes: survivingStrokes,
+          mathElements: survivingMath,
+        };
+      }
+
+      // Stroke / segment erase mode
+      let changed = false;
+      const newStrokes: Stroke[] = [];
+      const allShapeTools = [
+        'line', 'dashed-line', 'arrow', 'double-arrow', 'rect', 'square', 'circle', 'ellipse',
+        'triangle', 'right-triangle', 'axes', 'trapezoid', 'right-trapezoid', 'parallelogram',
+        'rhombus', 'box3d', 'cube3d', 'cylinder3d', 'cone3d', 'pyramid3d',
+      ];
+
+      for (const stroke of page.strokes) {
+        if (allShapeTools.includes(stroke.tool)) {
+          if (isPointNearStroke(stroke, worldPt, eraseRadius + stroke.width / 2)) {
+            changed = true;
+          } else {
+            newStrokes.push(stroke);
+          }
+        } else {
+          // Freehand pen or highlighter: remove individual points near eraser
+          const hasHit = stroke.points.some(
+            (p) => Math.hypot(p.x - worldPt.x, p.y - worldPt.y) <= eraseRadius
+          );
+          if (hasHit) {
+            changed = true;
+            const remainingPts = stroke.points.filter(
+              (p) => Math.hypot(p.x - worldPt.x, p.y - worldPt.y) > eraseRadius
+            );
+            if (remainingPts.length >= 2) {
+              newStrokes.push({ ...stroke, points: remainingPts });
+            }
+          } else {
+            newStrokes.push(stroke);
+          }
+        }
+      }
 
       const survivingMath = page.mathElements.filter((el) =>
         Math.hypot(el.x - worldPt.x, el.y - worldPt.y) >= eraseRadius * 4
       );
 
-      if (
-        survivingStrokes.length === page.strokes.length &&
-        survivingMath.length === page.mathElements.length
-      ) {
+      if (!changed && survivingMath.length === page.mathElements.length) {
         return {};
       }
 
       return {
-        strokes: survivingStrokes,
+        strokes: newStrokes,
         mathElements: survivingMath,
       };
     });
@@ -1144,6 +1257,10 @@ export default function App() {
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const isPen = e.pointerType === 'pen';
     const isTouch = e.pointerType === 'touch';
+
+    if (isPen) {
+      lastPenTimeRef.current = Date.now();
+    }
 
     activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY, isPen });
 
@@ -1158,7 +1275,7 @@ export default function App() {
       return;
     }
 
-    const isFingerWithPalmRejection = isTouch && palmRejection && !isPen;
+    const isFingerWithPalmRejection = isTouch && (palmRejection || Date.now() - lastPenTimeRef.current < 1500);
     const shouldPan =
       isSpacePressedRef.current ||
       e.button === 1 ||
@@ -1173,13 +1290,36 @@ export default function App() {
 
     if (e.button !== 0 && !isTouch && !isPen) return;
 
-    const proShapes = ['trapezoid', 'right-trapezoid', 'parallelogram', 'rhombus', 'box3d', 'cylinder3d', 'pyramid3d'];
+    const proShapes = [
+      'trapezoid',
+      'right-trapezoid',
+      'parallelogram',
+      'rhombus',
+      'box3d',
+      'cube3d',
+      'cylinder3d',
+      'cone3d',
+      'pyramid3d',
+    ];
     if (proShapes.includes(currentTool) && !currentUser?.is_pro) {
       setIsSubscriptionModalOpen(true);
       return;
     }
 
-    const isShape = ['line', 'dashed-line', 'arrow', 'rect', 'circle', 'triangle', 'right-triangle', 'axes', ...proShapes].includes(currentTool);
+    const isShape = [
+      'line',
+      'dashed-line',
+      'arrow',
+      'double-arrow',
+      'rect',
+      'square',
+      'circle',
+      'ellipse',
+      'triangle',
+      'right-triangle',
+      'axes',
+      ...proShapes,
+    ].includes(currentTool);
     const worldPt = screenToWorld(e.clientX, e.clientY, isShape);
     const rawPressure = e.pressure && e.pressure > 0 ? e.pressure : 0.5;
     const ptWithPressure = { ...worldPt, pressure: rawPressure, timestamp: Date.now() };
@@ -1199,9 +1339,9 @@ export default function App() {
       return;
     }
 
-    // Dynamic width for stylus pressure sensitivity
+    // Dynamic width for stylus pressure sensitivity: strokeWidth * (0.25 + 0.75 * pressure)
     const dynamicWidth = isPen
-      ? strokeWidth * (0.3 + 0.7 * (rawPressure || 0.5))
+      ? strokeWidth * (0.25 + 0.75 * (rawPressure || 0.5))
       : currentTool === 'highlighter' ? 18 : strokeWidth;
 
     pushUndoState();
@@ -1216,6 +1356,10 @@ export default function App() {
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'pen') {
+      lastPenTimeRef.current = Date.now();
+    }
+
     if (activePointersRef.current.has(e.pointerId)) {
       activePointersRef.current.set(e.pointerId, {
         x: e.clientX,
@@ -1255,8 +1399,11 @@ export default function App() {
       return;
     }
 
-    const isShape = currentStroke && ['line', 'dashed-line', 'arrow', 'rect', 'circle', 'triangle', 'right-triangle', 'axes',
-      'trapezoid', 'right-trapezoid', 'parallelogram', 'rhombus', 'box3d', 'cylinder3d', 'pyramid3d'].includes(currentStroke.tool);
+    const isShape = currentStroke && [
+      'line', 'dashed-line', 'arrow', 'double-arrow', 'rect', 'square', 'circle', 'ellipse',
+      'triangle', 'right-triangle', 'axes', 'trapezoid', 'right-trapezoid', 'parallelogram',
+      'rhombus', 'box3d', 'cube3d', 'cylinder3d', 'cone3d', 'pyramid3d',
+    ].includes(currentStroke.tool);
     const worldPt = screenToWorld(e.clientX, e.clientY, !!isShape);
     const pressure = e.pressure && e.pressure > 0 ? e.pressure : 0.5;
 
@@ -1569,6 +1716,12 @@ export default function App() {
   };
 
   const handleCreateBoard = (subjectId = selectedSubjectId, background: BoardBackground = 'grid', customTitle?: string) => {
+    if (!currentUser?.is_pro && boards.length >= 3) {
+      setIsCreateBoardOpen(false);
+      setIsSubscriptionModalOpen(true);
+      setBoardMessage('На бесплатном тарифе доступно до 3 досок. Оформите PRO для создания неограниченного числа уроков!');
+      return;
+    }
     const mode: SubjectMode = subjectId === 'geometry' ? 'geometry' : 'algebra';
     const subjectLabel = labelForSubject(subjectId);
     const newPage = makeEmptyPage(mode, background);
@@ -1853,7 +2006,14 @@ export default function App() {
           isLoading={isLoadingBoards}
           currentUser={currentUser}
           onSelectSubject={setSelectedSubjectId}
-          onCreateBoard={() => setIsCreateBoardOpen(true)}
+          onCreateBoard={() => {
+            if (!currentUser?.is_pro && boards.length >= 3) {
+              setIsSubscriptionModalOpen(true);
+              setBoardMessage('На бесплатном тарифе доступно до 3 досок. Оформите PRO для создания неограниченного числа уроков!');
+              return;
+            }
+            setIsCreateBoardOpen(true);
+          }}
           onOpenAccountSettings={() => setIsAccountSettingsOpen(true)}
           onOpenBoard={handleRequestOpenBoard}
           onRenameBoard={handleRenameSavedBoard}
@@ -1905,6 +2065,22 @@ export default function App() {
               onToggleFullscreen={handleToggleFullscreen}
             />
           )}
+
+          {/* 2. Floating Bottom Slides Dock Bar */}
+          <SlidesBar
+            pages={pages}
+            currentPageId={currentPageId}
+            theme={theme}
+            onSelectPage={(id) => {
+              setCurrentPageId(id);
+              const target = pages.find((p) => p.id === id);
+              if (target?.pan) setPan(target.pan);
+              if (target?.zoom) setZoom(target.zoom);
+            }}
+            onAddPage={handleAddPage}
+            onDeletePage={handleDeletePage}
+          />
+
       {/* 3. Main Drawing Canvas */}
       <canvas
         ref={canvasRef}
@@ -1971,6 +2147,8 @@ export default function App() {
         toolbarCustomization={toolbarCustomization}
         palmRejection={palmRejection}
         onTogglePalmRejection={() => setPalmRejection(!palmRejection)}
+        eraserMode={eraserMode}
+        onToggleEraserMode={() => setEraserMode((prev) => (prev === 'object' ? 'stroke' : 'object'))}
         showRuler={showRuler}
         onToggleRuler={() => setShowRuler(!showRuler)}
         showProtractor={showProtractor}

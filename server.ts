@@ -419,6 +419,147 @@ app.get('/api/auth/me', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
+// ----------------- OAuth 2.0 (Yandex & VK ID) -----------------
+
+// Yandex ID Start
+app.get('/api/auth/yandex', (req: Request, res: Response) => {
+  const clientId = process.env.YANDEX_CLIENT_ID;
+  if (!clientId) {
+    return res.redirect('/?oauth_error=yandex_not_configured');
+  }
+  const redirectUri = `${BASE_URL}/api/auth/yandex/callback`;
+  const url = `https://oauth.yandex.ru/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  return res.redirect(url);
+});
+
+// Yandex ID Callback
+app.get('/api/auth/yandex/callback', async (req: Request, res: Response) => {
+  try {
+    const code = req.query.code as string;
+    const clientId = process.env.YANDEX_CLIENT_ID;
+    const clientSecret = process.env.YANDEX_CLIENT_SECRET;
+
+    if (!code || !clientId || !clientSecret) {
+      return res.redirect('/?oauth_error=yandex_missing_code');
+    }
+
+    const redirectUri = `${BASE_URL}/api/auth/yandex/callback`;
+    const tokenRes = await fetch('https://oauth.yandex.ru/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+      }),
+    });
+
+    const tokenData = (await tokenRes.json()) as any;
+    if (!tokenData?.access_token) {
+      return res.redirect('/?oauth_error=yandex_token_failed');
+    }
+
+    const profileRes = await fetch('https://login.yandex.ru/info?format=json', {
+      headers: { Authorization: `OAuth ${tokenData.access_token}` },
+    });
+    const profile = (await profileRes.json()) as any;
+    const email = (profile.default_email || profile.emails?.[0] || `yandex_${profile.id}@doska-edu.ru`).toLowerCase();
+    const name = profile.real_name || profile.display_name || profile.first_name || 'Преподаватель (Яндекс)';
+
+    let user = database.prepare('SELECT id, email, role, is_pro FROM users WHERE LOWER(email) = LOWER(?)').get(email) as any;
+    if (!user) {
+      const userId = randomUUID();
+      const dummyHash = await bcrypt.hash(randomUUID(), 10);
+      database.prepare(`
+        INSERT INTO users (id, email, password_hash, name, role, is_pro, pro_expires_at, created_at)
+        VALUES (?, ?, ?, ?, 'user', 0, NULL, CURRENT_TIMESTAMP)
+      `).run(userId, email, dummyHash, name);
+      user = { id: userId, email, role: 'user', is_pro: 0 };
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    return res.redirect(`/?token=${encodeURIComponent(token)}&auth=success`);
+  } catch (err) {
+    console.error('Yandex OAuth error:', err);
+    return res.redirect('/?oauth_error=yandex_exception');
+  }
+});
+
+// VK ID Start
+app.get('/api/auth/vk', (req: Request, res: Response) => {
+  const clientId = process.env.VK_CLIENT_ID || process.env.VK_APP_ID;
+  if (!clientId) {
+    return res.redirect('/?oauth_error=vk_not_configured');
+  }
+  const redirectUri = `${BASE_URL}/api/auth/vk/callback`;
+  const url = `https://oauth.vk.com/authorize?client_id=${encodeURIComponent(clientId)}&display=page&redirect_uri=${encodeURIComponent(redirectUri)}&scope=email&response_type=code&v=5.131`;
+  return res.redirect(url);
+});
+
+// VK ID Callback
+app.get('/api/auth/vk/callback', async (req: Request, res: Response) => {
+  try {
+    const code = req.query.code as string;
+    const clientId = process.env.VK_CLIENT_ID || process.env.VK_APP_ID;
+    const clientSecret = process.env.VK_CLIENT_SECRET;
+
+    if (!code || !clientId || !clientSecret) {
+      return res.redirect('/?oauth_error=vk_missing_code');
+    }
+
+    const redirectUri = `${BASE_URL}/api/auth/vk/callback`;
+    const tokenUrl = `https://oauth.vk.com/access_token?client_id=${clientId}&client_secret=${clientSecret}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${encodeURIComponent(code)}`;
+    const tokenRes = await fetch(tokenUrl);
+    const tokenData = (await tokenRes.json()) as any;
+
+    if (!tokenData?.access_token) {
+      return res.redirect('/?oauth_error=vk_token_failed');
+    }
+
+    const email = (tokenData.email || `vk_${tokenData.user_id}@doska-edu.ru`).toLowerCase();
+    let name = 'Преподаватель (VK)';
+
+    try {
+      const userRes = await fetch(`https://api.vk.com/method/users.get?user_ids=${tokenData.user_id}&fields=first_name,last_name&access_token=${tokenData.access_token}&v=5.131`);
+      const userData = (await userRes.json()) as any;
+      if (userData?.response?.[0]) {
+        name = `${userData.response[0].first_name} ${userData.response[0].last_name}`.trim();
+      }
+    } catch (e) {
+      console.warn('VK users.get failed, using fallback name', e);
+    }
+
+    let user = database.prepare('SELECT id, email, role, is_pro FROM users WHERE LOWER(email) = LOWER(?)').get(email) as any;
+    if (!user) {
+      const userId = randomUUID();
+      const dummyHash = await bcrypt.hash(randomUUID(), 10);
+      database.prepare(`
+        INSERT INTO users (id, email, password_hash, name, role, is_pro, pro_expires_at, created_at)
+        VALUES (?, ?, ?, ?, 'user', 0, NULL, CURRENT_TIMESTAMP)
+      `).run(userId, email, dummyHash, name);
+      user = { id: userId, email, role: 'user', is_pro: 0 };
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    return res.redirect(`/?token=${encodeURIComponent(token)}&auth=success`);
+  } catch (err) {
+    console.error('VK OAuth error:', err);
+    return res.redirect('/?oauth_error=vk_exception');
+  }
+});
+
 // Обработчик обновления профиля (PUT /api/user/profile, PATCH /api/auth/profile и алиасы)
 const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
   try {

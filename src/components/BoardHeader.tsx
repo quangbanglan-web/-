@@ -113,9 +113,9 @@ export const BoardHeader: React.FC<BoardHeaderProps> = ({
     <header className={`fixed left-2 right-2 top-2 z-20 rounded-lg border px-2.5 py-2 shadow-lg backdrop-blur-xl sm:left-3 sm:right-3 sm:top-3 sm:px-3 ${isDark ? 'border-slate-700 bg-slate-950/90 text-slate-100' : 'border-slate-200 bg-white/95 text-slate-900'}`} onPointerDown={(event) => event.stopPropagation()} onTouchStart={(event) => event.stopPropagation()}>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="flex min-w-0 items-center gap-2">
-          <button onClick={onBack} title="В главное меню" className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-bold transition ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
+          <button onClick={onBack} title="Мои доски" className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-bold transition ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}>
             <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">В главное меню</span>
+            <span className="hidden sm:inline">Мои доски</span>
           </button>
           <span className={`hidden h-5 w-px sm:block ${isDark ? 'bg-slate-700' : 'bg-slate-200'}`} />
           <span className="max-w-28 truncate rounded-sm bg-emerald-800 px-2 py-1 text-[11px] font-bold text-white sm:max-w-40">{subjectLabel}</span>

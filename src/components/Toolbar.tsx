@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { ToolType, ThemeType, SubjectMode, ToolbarCustomization } from '../types/board';
+import { ToolType, ThemeType, SubjectMode, ToolbarCustomization, EraserMode } from '../types/board';
 import { User } from '../types/auth';
 import {
   Pen,
@@ -24,6 +24,8 @@ import {
   SlidersHorizontal,
   Grid,
   Crown,
+  Shield,
+  Layers,
 } from 'lucide-react';
 
 interface ToolbarProps {
@@ -42,6 +44,8 @@ interface ToolbarProps {
   toolbarCustomization: ToolbarCustomization;
   palmRejection: boolean;
   onTogglePalmRejection: () => void;
+  eraserMode?: EraserMode;
+  onToggleEraserMode?: () => void;
   // Geometry interactive instruments
   showRuler: boolean;
   onToggleRuler: () => void;
@@ -78,6 +82,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   toolbarCustomization,
   palmRejection,
   onTogglePalmRejection,
+  eraserMode = 'stroke',
+  onToggleEraserMode,
   showRuler,
   onToggleRuler,
   showProtractor,
@@ -112,17 +118,23 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     { tool: 'line', label: 'Прямая', icon: <Minus className="w-4 h-4" /> },
     { tool: 'dashed-line', label: 'Пунктир (высота / грань)', icon: <span className="font-mono font-black text-xs">---</span> },
     { tool: 'arrow', label: 'Вектор / Стрелка', icon: <MoveRight className="w-4 h-4" /> },
+    { tool: 'double-arrow', label: 'Двусторонняя стрелка (размер)', icon: <span className="font-bold text-xs">⟷</span> },
+    { tool: 'rect', label: 'Прямоугольник', icon: <Square className="w-4 h-4" /> },
+    { tool: 'square', label: 'Квадрат (1:1)', icon: <span className="font-bold text-xs">■</span> },
+    { tool: 'circle', label: 'Окружность с центром', icon: <Circle className="w-4 h-4" /> },
+    { tool: 'ellipse', label: 'Эллипс / Овал', icon: <span className="font-bold text-xs">⬭</span> },
     { tool: 'triangle', label: 'Треугольник', icon: <Triangle className="w-4 h-4" /> },
     { tool: 'right-triangle', label: 'Прямоугольный треугольник', icon: <span className="font-bold text-xs">⊿</span> },
-    { tool: 'rect', label: 'Прямоугольник', icon: <Square className="w-4 h-4" /> },
-    { tool: 'circle', label: 'Окружность с центром', icon: <Circle className="w-4 h-4" /> },
-    // PRO shapes
+    // PRO 2D shapes
     { tool: 'trapezoid', label: 'Трапеция равнобедренная', icon: <span className="font-bold text-xs">⌓</span>, isPro: true },
     { tool: 'right-trapezoid', label: 'Прямоугольная трапеция', icon: <span className="font-bold text-xs">⊓</span>, isPro: true },
     { tool: 'parallelogram', label: 'Параллелограмм', icon: <span className="font-bold text-xs">▱</span>, isPro: true },
     { tool: 'rhombus', label: 'Ромб', icon: <span className="font-bold text-xs">◇</span>, isPro: true },
-    { tool: 'box3d', label: 'Параллелепипед 3D', icon: <span className="font-bold text-xs">⬛</span>, isPro: true },
+    // PRO 3D shapes
+    { tool: 'box3d', label: 'Параллелепипед 3D', icon: <span className="font-bold text-xs">🧊</span>, isPro: true },
+    { tool: 'cube3d', label: 'Куб 3D (1:1:1)', icon: <span className="font-bold text-xs">🎲</span>, isPro: true },
     { tool: 'cylinder3d', label: 'Цилиндр 3D', icon: <span className="font-bold text-xs">⌀</span>, isPro: true },
+    { tool: 'cone3d', label: 'Конус 3D', icon: <span className="font-bold text-xs">▲</span>, isPro: true },
     { tool: 'pyramid3d', label: 'Пирамида 3D', icon: <span className="font-bold text-xs">△</span>, isPro: true },
   ];
 
@@ -227,20 +239,35 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         )}
 
         {toolbarCustomization.eraser && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectTool('eraser');
-            }}
-            title="Ластик"
-            className={`p-2.5 rounded-xl transition flex items-center justify-center ${
-              currentTool === 'eraser'
-                ? 'bg-rose-600 text-white shadow-md shadow-rose-500/30'
-                : 'hover:bg-black/5 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300'
-            }`}
-          >
-            <Eraser className="w-5 h-5" />
-          </button>
+          <div className="relative flex items-center">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (currentTool === 'eraser' && onToggleEraserMode) {
+                  onToggleEraserMode();
+                } else {
+                  onSelectTool('eraser');
+                }
+              }}
+              title={
+                currentTool === 'eraser'
+                  ? `Ластик (${eraserMode === 'object' ? 'Удалять объект целиком' : 'Стирать штрихи'}). Нажмите для переключения режима`
+                  : 'Ластик'
+              }
+              className={`p-2.5 rounded-xl transition flex items-center justify-center relative ${
+                currentTool === 'eraser'
+                  ? 'bg-rose-600 text-white shadow-md shadow-rose-500/30 ring-2 ring-rose-400/40'
+                  : 'hover:bg-black/5 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              <Eraser className="w-5 h-5" />
+              {currentTool === 'eraser' && (
+                <span className="absolute -bottom-1 -right-1 rounded bg-black/85 px-1 py-0.2 text-[8px] font-black uppercase text-white shadow">
+                  {eraserMode === 'object' ? 'Объект' : 'Штрих'}
+                </span>
+              )}
+            </button>
+          </div>
         )}
 
         {/* Shapes Menu Dropdown */}
@@ -430,6 +457,22 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             <Hand className="w-5 h-5" />
           </button>
         )}
+
+        {/* Palm Rejection Toggle */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePalmRejection();
+          }}
+          title={palmRejection ? 'Защита от ладони: ВКЛЮЧЕНА (нажмите для отключения)' : 'Защита от ладони: ВЫКЛЮЧЕНА (нажмите для включения)'}
+          className={`p-2.5 rounded-xl transition flex items-center justify-center ${
+            palmRejection
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400/40'
+              : 'hover:bg-black/5 dark:hover:bg-white/10 text-slate-400'
+          }`}
+        >
+          <Shield className="w-5 h-5" />
+        </button>
       </div>
 
       {/* 2. Algebra Specific Modals */}

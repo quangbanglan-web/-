@@ -5,8 +5,11 @@ export type ToolType =
   | 'line'
   | 'dashed-line'
   | 'arrow'
+  | 'double-arrow'
   | 'rect'
+  | 'square'
   | 'circle'
+  | 'ellipse'
   | 'triangle'
   | 'right-triangle'
   | 'axes'
@@ -18,8 +21,12 @@ export type ToolType =
   | 'parallelogram'
   | 'rhombus'
   | 'box3d'
+  | 'cube3d'
   | 'cylinder3d'
+  | 'cone3d'
   | 'pyramid3d';
+
+export type EraserMode = 'object' | 'stroke';
 
 export type BoardBackground =
   | 'grid'

@@ -8,7 +8,6 @@ import {
   User as UserIcon,
   LoaderCircle,
   AlertCircle,
-  Sparkles,
   Info,
 } from 'lucide-react';
 import { loginUser, registerUser } from '../utils/auth';
@@ -76,25 +75,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const handleOAuthClick = (providerName: string) => {
-    setOauthNotice(`Вход через ${providerName} находится в разработке и будет активирован в ближайшем обновлении.`);
+    if (providerName === 'Яндекс') {
+      window.location.href = '/api/auth/yandex';
+      return;
+    }
+    if (providerName === 'VK') {
+      window.location.href = '/api/auth/vk';
+      return;
+    }
+    setOauthNotice(`Вход через ${providerName} будет доступен после добавления ключей в настройках сервера.`);
     setTimeout(() => {
       setOauthNotice(null);
     }, 4500);
-  };
-
-  const handleQuickDemoLogin = async () => {
-    setEmail('teacher@doska.ru');
-    setPassword('teacher123');
-    setErrorMessage('');
-    setIsLoading(true);
-    try {
-      const response = await loginUser('teacher@doska.ru', 'teacher123');
-      onSuccess(response.user);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Ошибка демо-входа');
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   return (
@@ -314,19 +306,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <span>Google</span>
             </button>
           </div>
-        </div>
-
-        {/* Demo Fast Login */}
-        <div className="mt-5 border-t border-slate-100 pt-4 text-center">
-          <button
-            type="button"
-            onClick={handleQuickDemoLogin}
-            disabled={isLoading}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 transition hover:text-emerald-950 hover:underline"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-            <span>Войти как демо-преподаватель (teacher@doska.ru)</span>
-          </button>
         </div>
 
         {/* Legal Disclaimer */}

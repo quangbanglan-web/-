@@ -148,8 +148,14 @@ export function drawBoardBackground(
   background: BoardBackground,
   baseCellSize = 32
 ) {
-  if (background === 'grid' || background === 'math_grid' || background === 'clean') {
-    drawInfiniteGrid(ctx, viewport, (background === 'grid' || background === 'math_grid') ? 'notebook' : 'clean', baseCellSize);
+  const { pan, zoom, width, height } = viewport;
+
+  if (background === 'grid' || background === 'math_grid') {
+    drawInfiniteGrid(ctx, viewport, 'notebook', baseCellSize);
+    return;
+  }
+  if (background === 'clean') {
+    drawInfiniteGrid(ctx, viewport, 'clean', baseCellSize);
     return;
   }
   if (background === 'chalkboard' || background === 'blueprint') {
@@ -157,81 +163,217 @@ export function drawBoardBackground(
     return;
   }
 
-  const { pan, zoom, width, height } = viewport;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, width, height);
   ctx.save();
 
-  if (background === 'ruled' || background === 'mm' || background === 'millimeter') {
-    const isRuled = background === 'ruled';
-    const spacing = (isRuled ? baseCellSize * 1.5 : baseCellSize / 4) * zoom;
-    const originY = (pan.y * zoom) % spacing;
-    const originX = (pan.x * zoom) % spacing;
+  if (background === 'ruled') {
+    // Ruled lines (Линейка) locked to world coordinates
+    ctx.fillStyle = '#fcfbf7';
+    ctx.fillRect(0, 0, width, height);
+
+    const startX = -pan.x;
+    const startY = -pan.y;
+    const endX = startX + width / zoom;
+    const endY = startY + height / zoom;
+
+    const rowHeight = baseCellSize * 1.25;
+    const firstRowY = Math.floor(startY / rowHeight) * rowHeight;
+
     ctx.lineWidth = 1;
-    ctx.strokeStyle = isRuled ? '#b8d5ee' : '#e5b6b6';
+    ctx.strokeStyle = '#c8d6ed';
     ctx.beginPath();
-    for (let y = originY; y < height; y += spacing) {
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-    }
-    if (!isRuled) {
-      ctx.strokeStyle = '#d8dfe7';
-      for (let x = originX; x < width; x += spacing) {
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
-      }
+    for (let y = firstRowY; y <= endY; y += rowHeight) {
+      const screenY = Math.round((y + pan.y) * zoom);
+      ctx.moveTo(0, screenY);
+      ctx.lineTo(width, screenY);
     }
     ctx.stroke();
-    if (isRuled) {
-      const marginX = (pan.x * zoom) % (baseCellSize * 8 * zoom);
-      ctx.strokeStyle = '#ef9a9a';
+
+    // Red vertical margin line locked to world coordinate x = 0
+    const marginWorldX = 0;
+    const screenMarginX = Math.round((marginWorldX + pan.x) * zoom);
+    if (screenMarginX >= 0 && screenMarginX <= width) {
+      ctx.strokeStyle = '#f87171';
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(marginX, 0);
-      ctx.lineTo(marginX, height);
-      ctx.stroke();
-    } else {
-      const majorSpacing = baseCellSize * zoom;
-      ctx.strokeStyle = '#9cb7d1';
-      ctx.beginPath();
-      for (let x = (pan.x * zoom) % majorSpacing; x < width; x += majorSpacing) {
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
-      }
-      for (let y = (pan.y * zoom) % majorSpacing; y < height; y += majorSpacing) {
-        ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
-      }
+      ctx.moveTo(screenMarginX, 0);
+      ctx.lineTo(screenMarginX, height);
       ctx.stroke();
     }
-  } else {
-    ctx.fillStyle = '#eff6f8';
-    ctx.fillRect(0, 0, width, height);
-    const world = background === 'map-world' || background === 'map_world';
-    const continents = world
-      ? [
-          [[0.12, 0.18], [0.25, 0.12], [0.33, 0.2], [0.29, 0.34], [0.24, 0.43], [0.2, 0.58], [0.14, 0.42]],
-          [[0.3, 0.51], [0.38, 0.55], [0.41, 0.72], [0.37, 0.9], [0.32, 0.75]],
-          [[0.48, 0.22], [0.59, 0.16], [0.64, 0.28], [0.59, 0.4], [0.53, 0.38]],
-          [[0.6, 0.19], [0.77, 0.16], [0.9, 0.29], [0.83, 0.43], [0.69, 0.4], [0.62, 0.31]],
-          [[0.7, 0.48], [0.8, 0.47], [0.84, 0.61], [0.77, 0.72], [0.72, 0.62]],
-        ]
-      : [[[0.2, 0.12], [0.72, 0.14], [0.87, 0.34], [0.79, 0.53], [0.65, 0.49], [0.57, 0.67], [0.39, 0.57], [0.25, 0.4]]];
-    ctx.strokeStyle = '#647f88';
-    ctx.fillStyle = '#dce8d7';
-    ctx.lineWidth = 1.5;
-    for (const polygon of continents) {
-      ctx.beginPath();
-      polygon.forEach(([x, y], index) => {
-        const px = x * width;
-        const py = y * height;
-        if (index === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      });
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
+    ctx.restore();
+    return;
   }
+
+  if (background === 'millimeter' || background === 'mm') {
+    // Millimeter paper locked to world coordinates
+    ctx.fillStyle = '#fffdfa';
+    ctx.fillRect(0, 0, width, height);
+
+    const startX = -pan.x;
+    const startY = -pan.y;
+    const endX = startX + width / zoom;
+    const endY = startY + height / zoom;
+
+    const mmStep = baseCellSize / 4;
+    const majorStep = baseCellSize;
+    const bigStep = baseCellSize * 5;
+
+    // 1. Fine grid (if zoom is sufficient)
+    if (mmStep * zoom >= 4) {
+      const firstFineX = Math.floor(startX / mmStep) * mmStep;
+      const firstFineY = Math.floor(startY / mmStep) * mmStep;
+
+      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.2)';
+      ctx.beginPath();
+      for (let x = firstFineX; x <= endX; x += mmStep) {
+        const sx = Math.round((x + pan.x) * zoom);
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx, height);
+      }
+      for (let y = firstFineY; y <= endY; y += mmStep) {
+        const sy = Math.round((y + pan.y) * zoom);
+        ctx.moveTo(0, sy);
+        ctx.lineTo(width, sy);
+      }
+      ctx.stroke();
+    }
+
+    // 2. 1cm major grid
+    const firstMajorX = Math.floor(startX / majorStep) * majorStep;
+    const firstMajorY = Math.floor(startY / majorStep) * majorStep;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+    ctx.beginPath();
+    for (let x = firstMajorX; x <= endX; x += majorStep) {
+      const sx = Math.round((x + pan.x) * zoom);
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx, height);
+    }
+    for (let y = firstMajorY; y <= endY; y += majorStep) {
+      const sy = Math.round((y + pan.y) * zoom);
+      ctx.moveTo(0, sy);
+      ctx.lineTo(width, sy);
+    }
+    ctx.stroke();
+
+    // 3. 5cm accent grid
+    const firstBigX = Math.floor(startX / bigStep) * bigStep;
+    const firstBigY = Math.floor(startY / bigStep) * bigStep;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(220, 38, 38, 0.7)';
+    ctx.beginPath();
+    for (let x = firstBigX; x <= endX; x += bigStep) {
+      const sx = Math.round((x + pan.x) * zoom);
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx, height);
+    }
+    for (let y = firstBigY; y <= endY; y += bigStep) {
+      const sy = Math.round((y + pan.y) * zoom);
+      ctx.moveTo(0, sy);
+      ctx.lineTo(width, sy);
+    }
+    ctx.stroke();
+
+    ctx.restore();
+    return;
+  }
+
+  // Vector maps: map_world or map_russia locked to world coordinates (centered at 0, 0, 1920x1080 bounds)
+  ctx.fillStyle = '#f0f9ff';
+  ctx.fillRect(0, 0, width, height);
+
+  const mapOriginX = -960;
+  const mapOriginY = -540;
+  const mapW = 1920;
+  const mapH = 1080;
+
+  const screenMapX = (mapOriginX + pan.x) * zoom;
+  const screenMapY = (mapOriginY + pan.y) * zoom;
+  const screenMapW = mapW * zoom;
+  const screenMapH = mapH * zoom;
+
+  // Ocean frame
+  ctx.fillStyle = '#e0f2fe';
+  ctx.fillRect(screenMapX, screenMapY, screenMapW, screenMapH);
+  ctx.strokeStyle = '#bae6fd';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(screenMapX, screenMapY, screenMapW, screenMapH);
+
+  // Subtle coordinate grid on map
+  ctx.strokeStyle = 'rgba(186, 230, 253, 0.6)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let u = 0.2; u < 1; u += 0.2) {
+    const gx = screenMapX + u * screenMapW;
+    ctx.moveTo(gx, screenMapY);
+    ctx.lineTo(gx, screenMapY + screenMapH);
+  }
+  for (let v = 0.25; v < 1; v += 0.25) {
+    const gy = screenMapY + v * screenMapH;
+    ctx.moveTo(screenMapX, gy);
+    ctx.lineTo(screenMapX + screenMapW, gy);
+  }
+  ctx.stroke();
+
+  const isWorld = background === 'map_world' || background === 'map-world';
+  const polygons: [number, number][][] = isWorld
+    ? [
+        // North America
+        [[0.08, 0.16], [0.18, 0.12], [0.28, 0.15], [0.32, 0.22], [0.27, 0.35], [0.22, 0.44], [0.18, 0.52], [0.13, 0.45], [0.08, 0.30]],
+        // South America
+        [[0.27, 0.53], [0.35, 0.56], [0.39, 0.68], [0.35, 0.85], [0.30, 0.92], [0.26, 0.74], [0.24, 0.60]],
+        // Europe
+        [[0.46, 0.18], [0.55, 0.14], [0.58, 0.24], [0.52, 0.35], [0.46, 0.34], [0.44, 0.25]],
+        // Africa
+        [[0.45, 0.38], [0.58, 0.36], [0.62, 0.52], [0.57, 0.72], [0.51, 0.76], [0.46, 0.60], [0.42, 0.45]],
+        // Asia
+        [[0.58, 0.14], [0.82, 0.12], [0.92, 0.22], [0.88, 0.38], [0.78, 0.45], [0.72, 0.52], [0.66, 0.45], [0.62, 0.32]],
+        // Australia
+        [[0.78, 0.65], [0.88, 0.63], [0.91, 0.75], [0.85, 0.84], [0.77, 0.78]],
+        // Greenland
+        [[0.32, 0.08], [0.40, 0.07], [0.38, 0.18], [0.33, 0.16]]
+      ]
+    : [
+        // Russia mainland
+        [
+          [0.15, 0.22], [0.24, 0.15], [0.36, 0.14], [0.48, 0.12], [0.62, 0.11], 
+          [0.76, 0.12], [0.88, 0.18], [0.92, 0.32], [0.84, 0.48], [0.76, 0.54],
+          [0.64, 0.52], [0.54, 0.58], [0.45, 0.64], [0.36, 0.62], [0.26, 0.55],
+          [0.18, 0.46], [0.12, 0.34]
+        ],
+        // Kamchatka
+        [[0.89, 0.25], [0.94, 0.34], [0.93, 0.44], [0.89, 0.42], [0.88, 0.30]],
+        // Sakhalin
+        [[0.86, 0.38], [0.88, 0.42], [0.87, 0.52], [0.85, 0.50]],
+        // Crimea
+        [[0.22, 0.56], [0.25, 0.55], [0.26, 0.60], [0.23, 0.61]],
+        // Novaya Zemlya
+        [[0.48, 0.06], [0.52, 0.08], [0.50, 0.16], [0.46, 0.14]]
+      ];
+
+  ctx.strokeStyle = '#0284c7';
+  ctx.fillStyle = '#f0fdf4';
+  ctx.lineWidth = Math.max(1, 1.5 * zoom);
+
+  for (const poly of polygons) {
+    ctx.beginPath();
+    poly.forEach(([u, v], idx) => {
+      const wx = mapOriginX + u * mapW;
+      const wy = mapOriginY + v * mapH;
+      const sx = (wx + pan.x) * zoom;
+      const sy = (wy + pan.y) * zoom;
+      if (idx === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    });
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#0369a1';
+  ctx.font = `600 ${Math.max(12, Math.round(14 * zoom))}px 'JetBrains Mono', sans-serif`;
+  ctx.fillText(isWorld ? 'КАРТА МИРА' : 'КОНТУРНАЯ КАРТА РОССИИ', screenMapX + 16 * zoom, screenMapY + 28 * zoom);
+
   ctx.restore();
 }
 
@@ -315,6 +457,52 @@ export function drawStroke(
     return;
   }
 
+  // 3b. Double Arrow (vectors, dimensions)
+  if (stroke.tool === 'double-arrow') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      ctx.lineWidth = stroke.width * zoom;
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+
+      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      const headLen = Math.max(12, stroke.width * 3.5) * zoom;
+
+      // Head at p2
+      ctx.beginPath();
+      ctx.moveTo(p2.x, p2.y);
+      ctx.lineTo(
+        p2.x - headLen * Math.cos(angle - Math.PI / 6),
+        p2.y - headLen * Math.sin(angle - Math.PI / 6)
+      );
+      ctx.lineTo(
+        p2.x - headLen * Math.cos(angle + Math.PI / 6),
+        p2.y - headLen * Math.sin(angle + Math.PI / 6)
+      );
+      ctx.closePath();
+      ctx.fill();
+
+      // Head at p1
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(
+        p1.x + headLen * Math.cos(angle - Math.PI / 6),
+        p1.y + headLen * Math.sin(angle - Math.PI / 6)
+      );
+      ctx.lineTo(
+        p1.x + headLen * Math.cos(angle + Math.PI / 6),
+        p1.y + headLen * Math.sin(angle + Math.PI / 6)
+      );
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+
   // 4. Rectangle
   if (stroke.tool === 'rect') {
     if (pts.length >= 2) {
@@ -326,6 +514,29 @@ export function drawStroke(
         Math.min(p1.y, p2.y),
         Math.abs(p2.x - p1.x),
         Math.abs(p2.y - p1.y)
+      );
+    }
+    ctx.restore();
+    return;
+  }
+
+  // 4b. Square (1:1 aspect ratio)
+  if (stroke.tool === 'square') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const side = Math.max(Math.abs(dx), Math.abs(dy));
+      const sx = p1.x + (dx >= 0 ? side : -side);
+      const sy = p1.y + (dy >= 0 ? side : -side);
+
+      ctx.lineWidth = stroke.width * zoom;
+      ctx.strokeRect(
+        Math.min(p1.x, sx),
+        Math.min(p1.y, sy),
+        side,
+        side
       );
     }
     ctx.restore();
@@ -351,6 +562,25 @@ export function drawStroke(
       ctx.beginPath();
       ctx.arc(cx, cy, Math.max(2, 2.5 * zoom), 0, 2 * Math.PI);
       ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // 5b. Ellipse (arbitrary aspect ratio)
+  if (stroke.tool === 'ellipse') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      const rx = Math.abs(p2.x - p1.x) / 2;
+      const ry = Math.abs(p2.y - p1.y) / 2;
+      const cx = (p1.x + p2.x) / 2;
+      const cy = (p1.y + p2.y) / 2;
+
+      ctx.lineWidth = stroke.width * zoom;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
+      ctx.stroke();
     }
     ctx.restore();
     return;
@@ -632,6 +862,57 @@ export function drawStroke(
     return;
   }
 
+  // 13b. 3D Cube (strict 1:1:1 proportions)
+  if (stroke.tool === 'cube3d') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      const s = Math.max(Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y));
+      const lx = Math.min(p1.x, p2.x);
+      const ty = Math.min(p1.y, p2.y);
+      const rx = lx + s;
+      const by = ty + s;
+      const depth = s * 0.35;
+      const ox = depth * 0.7;
+      const oy = -depth * 0.5;
+      ctx.lineWidth = stroke.width * zoom;
+
+      // Front face
+      ctx.beginPath();
+      ctx.rect(lx, ty, s, s);
+      ctx.stroke();
+
+      // Top face
+      ctx.beginPath();
+      ctx.moveTo(lx, ty);
+      ctx.lineTo(lx + ox, ty + oy);
+      ctx.lineTo(rx + ox, ty + oy);
+      ctx.lineTo(rx, ty);
+      ctx.stroke();
+
+      // Right face
+      ctx.beginPath();
+      ctx.moveTo(rx, ty);
+      ctx.lineTo(rx + ox, ty + oy);
+      ctx.lineTo(rx + ox, by + oy);
+      ctx.lineTo(rx, by);
+      ctx.stroke();
+
+      // Dashed hidden lines
+      ctx.setLineDash([5 * zoom, 4 * zoom]);
+      ctx.beginPath();
+      ctx.moveTo(lx, by);
+      ctx.lineTo(lx + ox, by + oy);
+      ctx.lineTo(rx + ox, by + oy);
+      ctx.moveTo(lx + ox, ty + oy);
+      ctx.lineTo(lx + ox, by + oy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+    return;
+  }
+
   // 14. 3D Cylinder
   if (stroke.tool === 'cylinder3d') {
     if (pts.length >= 2) {
@@ -726,11 +1007,57 @@ export function drawStroke(
     return;
   }
 
+  // 15b. 3D Cone
+  if (stroke.tool === 'cone3d') {
+    if (pts.length >= 2) {
+      const p1 = pts[0];
+      const p2 = pts[pts.length - 1];
+      const w = Math.abs(p2.x - p1.x);
+      const h = Math.abs(p2.y - p1.y);
+      const lx = Math.min(p1.x, p2.x);
+      const ty = Math.min(p1.y, p2.y);
+      const by = ty + h;
+      const cx = lx + w / 2;
+      const rx = w / 2;
+      const ry = Math.max(w * 0.15, 8 * zoom);
+      const apex = { x: cx, y: ty };
+      ctx.lineWidth = stroke.width * zoom;
+
+      // Slant sides
+      ctx.beginPath();
+      ctx.moveTo(apex.x, apex.y);
+      ctx.lineTo(lx, by);
+      ctx.moveTo(apex.x, apex.y);
+      ctx.lineTo(lx + w, by);
+      ctx.stroke();
+
+      // Base solid lower arc
+      ctx.beginPath();
+      ctx.ellipse(cx, by, rx, ry, 0, 0, Math.PI);
+      ctx.stroke();
+
+      // Base dashed upper arc (hidden)
+      ctx.setLineDash([5 * zoom, 4 * zoom]);
+      ctx.beginPath();
+      ctx.ellipse(cx, by, rx, ry, 0, Math.PI, Math.PI * 2);
+      ctx.stroke();
+
+      // Dashed height line from apex to center of base
+      ctx.beginPath();
+      ctx.moveTo(apex.x, apex.y);
+      ctx.lineTo(cx, by);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+    return;
+  }
+
   // 16. Freehand Pen / Highlighter with natural smooth bezier curves
   if (pts.length === 1) {
     const rawP = stroke.points[0]?.pressure ?? 0.5;
     const dotW = stroke.tool === 'pen' && stroke.points[0]?.pressure !== undefined
-      ? stroke.width * (0.3 + 0.7 * rawP) * zoom
+      ? stroke.width * (0.25 + 0.75 * rawP) * zoom
       : stroke.width * zoom;
     ctx.fillStyle = stroke.color;
     ctx.beginPath();
@@ -746,7 +1073,7 @@ export function drawStroke(
       const p1 = pts[i];
       const p2 = pts[i + 1];
       const pr = ((stroke.points[i]?.pressure ?? 0.5) + (stroke.points[i + 1]?.pressure ?? 0.5)) / 2;
-      ctx.lineWidth = stroke.width * (0.3 + 0.7 * pr) * zoom;
+      ctx.lineWidth = stroke.width * (0.25 + 0.75 * pr) * zoom;
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);

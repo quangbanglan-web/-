@@ -1,9 +1,10 @@
 {
-  "name": "DOSKA — Интерактивная онлайн-доска",
+  "name": "DOSKA — Онлайн-доска для преподавателей",
   "short_name": "DOSKA",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#ffffff",
   "theme_color": "#064e3b",
   "icons": [
