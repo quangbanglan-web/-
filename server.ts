@@ -336,7 +336,24 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Неверный адрес электронной почты или пароль' });
     }
 
-    const isValid = await bcrypt.compare(password, user.password_hash);
+    let isValid = false;
+    try {
+      isValid = await bcrypt.compare(password, user.password_hash);
+    } catch {
+      isValid = false;
+    }
+
+    // Мягкая миграция: если хеш не распознан или пароль сохранен в открытом виде
+    if (!isValid && user.password_hash === password) {
+      isValid = true;
+      try {
+        const upgradedHash = await bcrypt.hash(password, 10);
+        database.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(upgradedHash, user.id);
+      } catch (err) {
+        console.error('Failed to auto-upgrade legacy password hash:', err);
+      }
+    }
+
     if (!isValid) {
       return res.status(401).json({ error: 'Неверный адрес электронной почты или пароль' });
     }
@@ -402,10 +419,13 @@ app.get('/api/auth/me', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 });
 
-app.patch('/api/auth/profile', authMiddleware, async (req: AuthRequest, res: Response) => {
+// Обработчик обновления профиля (PUT /api/user/profile, PATCH /api/auth/profile и алиасы)
+const handleUpdateProfile = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const { name, email, oldPassword, newPassword } = req.body ?? {};
+    const { name, email, currentPassword, oldPassword, newPassword } = req.body ?? {};
+    const passToCheck = currentPassword !== undefined ? currentPassword : oldPassword;
+
     const current = database.prepare(
       'SELECT id, email, password_hash, name, role, is_pro, pro_expires_at, created_at FROM users WHERE id = ?'
     ).get(userId) as {
@@ -433,16 +453,35 @@ app.patch('/api/auth/profile', authMiddleware, async (req: AuthRequest, res: Res
       if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
         return res.status(400).json({ error: 'Введите корректный email' });
       }
+      const cleanEmail = email.trim().toLowerCase();
+      const existing = database.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?').get(cleanEmail, userId);
+      if (existing) {
+        return res.status(409).json({ error: 'Пользователь с таким email уже зарегистрирован' });
+      }
       updates.push('email = ?');
-      values.push(email.trim().toLowerCase());
+      values.push(cleanEmail);
     }
 
-    if (newPassword !== undefined) {
-      if (typeof oldPassword !== 'string' || !oldPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
-        return res.status(400).json({ error: 'Введите текущий пароль и новый пароль длиной не менее 6 символов' });
+    if (newPassword !== undefined || passToCheck !== undefined) {
+      if (typeof passToCheck !== 'string' || !passToCheck) {
+        return res.status(400).json({ error: 'Введите текущий пароль' });
       }
-      if (!(await bcrypt.compare(oldPassword, current.password_hash))) {
-        return res.status(403).json({ error: 'Текущий пароль указан неверно' });
+      if (typeof newPassword !== 'string' || newPassword.length < 6) {
+        return res.status(400).json({ error: 'Новый пароль должен содержать не менее 6 символов' });
+      }
+      
+      let isMatch = false;
+      try {
+        isMatch = await bcrypt.compare(passToCheck, current.password_hash);
+      } catch {
+        isMatch = false;
+      }
+      if (!isMatch && current.password_hash === passToCheck) {
+        isMatch = true;
+      }
+
+      if (!isMatch) {
+        return res.status(400).json({ error: 'Неверный текущий пароль' });
       }
       updates.push('password_hash = ?');
       values.push(await bcrypt.hash(newPassword, 10));
@@ -453,16 +492,31 @@ app.patch('/api/auth/profile', authMiddleware, async (req: AuthRequest, res: Res
     database.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
     const updated = database.prepare(
       'SELECT id, email, name, role, is_pro, pro_expires_at, created_at FROM users WHERE id = ?'
-    ).get(userId);
-    return res.json({ user: updated });
+    ).get(userId) as any;
+    return res.json({
+      user: {
+        id: updated.id,
+        email: updated.email,
+        name: updated.name,
+        role: updated.role,
+        is_pro: Boolean(updated.is_pro),
+        pro_expires_at: updated.pro_expires_at,
+        created_at: updated.created_at,
+      },
+    });
   } catch (error) {
     if (error instanceof Error && error.message.includes('UNIQUE constraint failed: users.email')) {
       return res.status(409).json({ error: 'Пользователь с таким email уже зарегистрирован' });
     }
-    console.error('Error in PATCH /api/auth/profile:', error);
+    console.error('Error in profile update:', error);
     return res.status(500).json({ error: 'Ошибка обновления профиля' });
   }
-});
+};
+
+app.put('/api/user/profile', authMiddleware, handleUpdateProfile);
+app.patch('/api/user/profile', authMiddleware, handleUpdateProfile);
+app.patch('/api/auth/profile', authMiddleware, handleUpdateProfile);
+app.put('/api/auth/profile', authMiddleware, handleUpdateProfile);
 
 // POST /api/auth/upgrade-pro — Активация PRO подписки
 app.post('/api/auth/upgrade-pro', authMiddleware, (req: AuthRequest, res: Response) => {

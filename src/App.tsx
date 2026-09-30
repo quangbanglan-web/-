@@ -43,7 +43,7 @@ import { PrivacyModal } from './components/legal/PrivacyModal';
 import { ContactsModal } from './components/legal/ContactsModal';
 import { MathCard } from './components/MathCard';
 import { CreateBoardModal } from './components/CreateBoardModal';
-import { AccountSettingsModal } from './components/AccountSettingsModal';
+import { ProfileModal } from './components/ProfileModal';
 import { User } from './types/auth';
 import { authFetch, fetchCurrentUser, getStoredToken, removeStoredToken } from './utils/auth';
 import { confirmSandboxPayment } from './utils/payment';
@@ -1886,12 +1886,13 @@ export default function App() {
         onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
       />
       {currentUser && (
-        <AccountSettingsModal
+        <ProfileModal
           isOpen={isAccountSettingsOpen}
           onClose={() => setIsAccountSettingsOpen(false)}
           currentUser={currentUser}
           authToken={getStoredToken() || ''}
           onUserUpdated={setCurrentUser}
+          onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
         />
       )}
 

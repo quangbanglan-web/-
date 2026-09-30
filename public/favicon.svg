@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="boardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f4c3a"/>
+      <stop offset="100%" stop-color="#06382a"/>
+    </linearGradient>
+    <linearGradient id="woodBorder" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#b45309"/>
+      <stop offset="100%" stop-color="#78350f"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Wooden Board Outer Frame -->
+  <rect x="32" y="32" width="448" height="448" rx="72" fill="url(#woodBorder)"/>
+  
+  <!-- Board Inner Slate (School Chalkboard) -->
+  <rect x="52" y="52" width="408" height="408" rx="54" fill="url(#boardGrad)"/>
+
+  <!-- Subtle Chalkboard Grid Lines -->
+  <path d="M52 188h408 M52 324h408 M188 52v408 M324 52v408" stroke="#ffffff" stroke-opacity="0.08" stroke-width="4" stroke-dasharray="8 8"/>
+
+  <!-- Geometry: Right-angled Triangle (Set square / угольник) -->
+  <path d="M120 372 L120 160 L332 372 Z" fill="#ffffff" fill-opacity="0.12" stroke="#ffffff" stroke-width="14" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Triangle inner cutout -->
+  <path d="M165 335 L165 240 L260 335 Z" fill="#0b4031" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+
+  <!-- Chalk Compass Arc & Angle Marker -->
+  <path d="M120 280 A 92 92 0 0 1 212 372" fill="none" stroke="url(#goldGrad)" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="120" cy="372" r="8" fill="#fbbf24"/>
+
+  <!-- Chalk Stick (мелок) -->
+  <g transform="translate(280, 240) rotate(-35)">
+    <rect x="0" y="0" width="130" height="34" rx="8" fill="#ffffff" opacity="0.95"/>
+    <rect x="0" y="0" width="30" height="34" rx="6" fill="#fde68a"/>
+  </g>
+
+  <!-- Small Chalk Tray / Base at the bottom -->
+  <rect x="140" y="426" width="232" height="12" rx="6" fill="#d97706" opacity="0.9"/>
+  <rect x="230" y="420" width="50" height="10" rx="3" fill="#ffffff" opacity="0.9"/>
+</svg>
