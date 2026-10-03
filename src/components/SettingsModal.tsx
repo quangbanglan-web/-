@@ -54,12 +54,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const isDark = theme === 'chalkboard' || theme === 'blueprint';
   const isPro = !!currentUser?.is_pro;
   const backgrounds: Array<{ id: BoardBackground; label: string; description: string; pro?: boolean; color: string }> = [
-    { id: 'grid', label: 'В клетку', description: 'Тетрадный лист', color: '#f7f9fc' },
-    { id: 'ruled', label: 'В линейку', description: 'Русский язык и литература', pro: true, color: '#f7fbff' },
+    { id: 'grid', label: 'В клетку', description: 'Тетрадный лист', pro: false, color: '#f7f9fc' },
+    { id: 'ruled', label: 'В линейку', description: 'Русский язык и литература', pro: false, color: '#f7fbff' },
+    { id: 'clean', label: 'Чистый лист', description: 'Без разметки', pro: false, color: '#ffffff' },
     { id: 'mm', label: 'Миллиметровка', description: 'Инженерная сетка', pro: true, color: '#f7f9fc' },
-    { id: 'clean', label: 'Чистый лист', description: 'Без разметки', color: '#ffffff' },
     { id: 'map-world', label: 'Карта мира', description: 'Контурная карта', pro: true, color: '#eff6f8' },
-    { id: 'map-russia', label: 'Карта РФ', description: 'Контурная карта', pro: true, color: '#eff6f8' },
+    { id: 'map-russia', label: 'Карта РФ', description: 'Субъекты и реки', pro: true, color: '#eff6f8' },
+    { id: 'map-europe', label: 'Карта Европы', description: 'Контурная карта', pro: true, color: '#eff6f8' },
+    { id: 'map-history', label: 'История', description: 'Древний мир и пути', pro: true, color: '#fbf8f1' },
   ];
 
   return (

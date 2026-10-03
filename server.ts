@@ -221,7 +221,7 @@ export interface AuthRequest extends Request {
 export const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Требуется авторизация' });
+    return res.status(401).json({ error: 'Требуется авторизация', expired: true });
   }
 
   const token = authHeader.substring(7).trim();
@@ -230,7 +230,7 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
     req.user = decoded;
     next();
   } catch {
-    return res.status(401).json({ error: 'Недействительный или истекший токен авторизации' });
+    return res.status(401).json({ error: 'Недействительный или истекший токен авторизации', expired: true });
   }
 };
 
@@ -1130,58 +1130,92 @@ app.get('/api/boards/:id', authMiddleware, (req: AuthRequest, res: Response) => 
   }
 });
 
-app.post('/api/boards', authMiddleware, (req: AuthRequest, res: Response) => {
+const handleSaveBoard = (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
-  const { id = randomUUID(), subject, title, data } = req.body ?? {};
-  if (typeof id !== 'string' || !id.trim() || typeof subject !== 'string' || !subject.trim() || data === undefined) {
+  const rawId = req.params?.id || req.body?.id || randomUUID();
+  const cleanId = String(rawId).trim();
+  const { subject = 'math', title, data } = req.body ?? {};
+
+  if (!cleanId || !subject || data === undefined) {
     return res.status(400).json({ error: 'Поля id, subject и data обязательны' });
   }
 
-  // Проверка прав на существующую доску
-  const existing = database.prepare('SELECT user_id FROM boards WHERE id = ?').get(id.trim()) as { user_id: string } | undefined;
-  if (existing && existing.user_id !== userId) {
-    return res.status(403).json({ error: 'У вас нет прав на редактирование этой доски' });
+  const isAdmin = req.user?.role === 'admin';
+
+  // Check if board already exists in database
+  const existing = database.prepare('SELECT id, user_id FROM boards WHERE id = ?').get(cleanId) as { id: string; user_id: string | null } | undefined;
+
+  if (existing && existing.user_id) {
+    const isOwner = String(existing.user_id) === String(userId) || existing.user_id === 'default-teacher-uuid';
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: 'У вас нет прав на редактирование этой доски' });
+    }
   }
 
   let serializedData: string;
   try {
-    serializedData = JSON.stringify(data);
+    serializedData = typeof data === 'string' ? data : JSON.stringify(data);
   } catch {
     return res.status(400).json({ error: 'Поле data должно быть корректным JSON' });
   }
 
-  const boardTitle = typeof title === 'string' && title.trim() ? title.trim() : makeAutoTitle(subject.trim());
+  const boardTitle = typeof title === 'string' && title.trim() ? title.trim() : makeAutoTitle(String(subject).trim());
 
-  database.prepare(`
-    INSERT INTO boards (id, user_id, subject, title, data, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    ON CONFLICT(id) DO UPDATE SET
-      subject = excluded.subject,
-      title = excluded.title,
-      data = excluded.data,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE boards.user_id = excluded.user_id
-  `).run(id.trim(), userId, subject.trim(), boardTitle, serializedData);
+  if (existing) {
+    const effectiveUserId = (existing.user_id && existing.user_id !== 'default-teacher-uuid' && !isAdmin) ? existing.user_id : userId;
+    database.prepare(`
+      UPDATE boards
+      SET user_id = ?, subject = ?, title = ?, data = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(effectiveUserId, String(subject).trim(), boardTitle, serializedData, cleanId);
+  } else {
+    database.prepare(`
+      INSERT INTO boards (id, user_id, subject, title, data, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(cleanId, userId, String(subject).trim(), boardTitle, serializedData);
+  }
 
-  return res.json({ id: id.trim(), subject: subject.trim(), title: boardTitle });
-});
+  return res.json({ id: cleanId, subject: String(subject).trim(), title: boardTitle, ok: true, success: true });
+};
+
+app.post('/api/boards', authMiddleware, handleSaveBoard);
+app.put('/api/boards/:id', authMiddleware, handleSaveBoard);
 
 app.patch('/api/boards/:id/rename', authMiddleware, (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
+  const rawId = req.params.id;
   const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
   if (!title) return res.status(400).json({ error: 'Название не может быть пустым' });
 
-  const result = database.prepare('UPDATE boards SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?')
-    .run(title, req.params.id, userId);
-  if (result.changes === 0) return res.status(404).json({ error: 'Доска не найдена или доступ ограничен' });
-  return res.json({ id: req.params.id, title });
+  const isAdmin = req.user?.role === 'admin';
+  const board = database.prepare('SELECT id, user_id FROM boards WHERE id = ? OR id = ?').get(String(rawId), Number(rawId) || String(rawId)) as { id: string; user_id: string | null } | undefined;
+  if (!board) return res.status(404).json({ error: 'Доска не найдена' });
+
+  if (board.user_id && board.user_id !== 'default-teacher-uuid' && String(board.user_id) !== String(userId) && !isAdmin) {
+    return res.status(403).json({ error: 'У вас нет прав на редактирование этой доски' });
+  }
+
+  database.prepare('UPDATE boards SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(title, board.id);
+  return res.json({ id: board.id, title, ok: true });
 });
 
 app.delete('/api/boards/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
-  const result = database.prepare('DELETE FROM boards WHERE id = ? AND user_id = ?').run(req.params.id, userId);
-  if (result.changes === 0) return res.status(404).json({ error: 'Доска не найдена или доступ ограничен' });
-  return res.json({ ok: true });
+  const rawId = req.params.id;
+  const isAdmin = req.user?.role === 'admin';
+
+  // Match string or numeric ID in SQLite
+  const board = database.prepare('SELECT id, user_id FROM boards WHERE id = ? OR id = ?').get(String(rawId), Number(rawId) || String(rawId)) as { id: string; user_id: string | null } | undefined;
+  if (!board) {
+    return res.status(404).json({ error: 'Доска не найдена' });
+  }
+
+  if (board.user_id && board.user_id !== 'default-teacher-uuid' && String(board.user_id) !== String(userId) && !isAdmin) {
+    return res.status(403).json({ error: 'У вас нет прав на удаление этой доски' });
+  }
+
+  database.prepare('DELETE FROM boards WHERE id = ?').run(board.id);
+  return res.json({ ok: true, success: true, id: board.id });
 });
 
 const isPageArray = (value: unknown): boolean =>

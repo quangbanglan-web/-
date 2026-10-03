@@ -29,7 +29,7 @@ const SUBJECT_TEMPLATES: SubjectTemplate[] = [
     label: 'Русский язык / Литература',
     description: 'Тетрадь в линейку',
     background: 'ruled',
-    isPro: true,
+    isPro: false,
     emoji: '📖',
   },
   {
@@ -78,7 +78,7 @@ export const CreateBoardModal: React.FC<CreateBoardModalProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [selected, setSelected] = useState<SubjectTemplate>(SUBJECT_TEMPLATES[0]);
-  const [mapVariant, setMapVariant] = useState<'map_world' | 'map_russia'>('map_world');
+  const [mapVariant, setMapVariant] = useState<'map_world' | 'map_russia' | 'map_europe' | 'map_history'>('map_world');
 
   if (!isOpen) return null;
 
@@ -208,32 +208,54 @@ export const CreateBoardModal: React.FC<CreateBoardModalProps> = ({
             </div>
           </div>
 
-          {/* Sub-choice for Map (World vs Russia) */}
+          {/* Sub-choice for Map (World, Russia, Europe, History) */}
           {selected.id === 'geography' && (
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col gap-2">
               <span className="text-xs font-bold text-slate-700">Тип контурной карты:</span>
-              <div className="flex gap-1.5">
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                 <button
                   type="button"
                   onClick={() => setMapVariant('map_world')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition text-center truncate ${
                     mapVariant === 'map_world'
                       ? 'bg-emerald-800 text-white shadow-xs'
                       : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  🗺️ Карта мира
+                  🗺️ Мир
                 </button>
                 <button
                   type="button"
                   onClick={() => setMapVariant('map_russia')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition text-center truncate ${
                     mapVariant === 'map_russia'
                       ? 'bg-emerald-800 text-white shadow-xs'
                       : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  🇷🇺 Карта РФ
+                  🇷🇺 Россия
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMapVariant('map_europe')}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition text-center truncate ${
+                    mapVariant === 'map_europe'
+                      ? 'bg-emerald-800 text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  🇪🇺 Европа
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMapVariant('map_history')}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition text-center truncate ${
+                    mapVariant === 'map_history'
+                      ? 'bg-emerald-800 text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  🏛️ История
                 </button>
               </div>
             </div>

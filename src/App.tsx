@@ -46,6 +46,8 @@ import { ContactsModal } from './components/legal/ContactsModal';
 import { MathCard } from './components/MathCard';
 import { CreateBoardModal } from './components/CreateBoardModal';
 import { ProfileModal } from './components/ProfileModal';
+import { BoardLimitModal } from './components/BoardLimitModal';
+import { convertPdfToPages, PdfImportProgress } from './utils/pdfImporter';
 import { User } from './types/auth';
 import { authFetch, fetchCurrentUser, getStoredToken, removeStoredToken } from './utils/auth';
 import { confirmSandboxPayment } from './utils/payment';
@@ -434,15 +436,30 @@ export default function App() {
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   const [isContactsModalOpen, setIsContactsModalOpen] = useState(false);
 
+  // Guest Mode, 1-Board Limit & Auth Modals
+  const [allUserBoards, setAllUserBoards] = useState<SavedBoardSummary[]>([]);
+  const [isGuest, setIsGuest] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authNotice, setAuthNotice] = useState('');
+  const [isBoardLimitModalOpen, setIsBoardLimitModalOpen] = useState(false);
+  const [pendingCreateAction, setPendingCreateAction] = useState<(() => void) | null>(null);
+
+  // PDF import state
+  const pdfInputRef = useRef<HTMLInputElement | null>(null);
+  const [isImportingPdf, setIsImportingPdf] = useState(false);
+  const [pdfImportProgress, setPdfImportProgress] = useState<PdfImportProgress>({ currentPage: 0, totalPages: 0 });
+
   const handleLogout = useCallback(() => {
     removeStoredToken();
     setCurrentUser(null);
     setBoards([]);
+    setAllUserBoards([]);
     setActiveBoard(null);
     setActiveView('dashboard');
     setBoardUrl(null);
     setIsInterstitialOpen(false);
     setPendingBoardIdToOpen(null);
+    setIsGuest(false);
   }, []);
 
   // Check auth session on launch and OAuth redirects
@@ -650,8 +667,16 @@ export default function App() {
   const [currentTool, setCurrentTool] = useState<ToolType>('pen');
   const [color, setColor] = useState<string>('#1e3a8a');
   const [strokeWidth, setStrokeWidth] = useState<number>(3);
-  const [theme, setTheme] = useState<ThemeType>('notebook');
   const [baseCellSize, setBaseCellSize] = useState<number>(32);
+  const [theme, setTheme] = useState<ThemeType>(() => {
+    try {
+      const saved = localStorage.getItem('mathboard_theme_v2');
+      if (saved === 'notebook' || saved === 'blueprint' || saved === 'chalkboard' || saved === 'clean') {
+        return saved as ThemeType;
+      }
+    } catch {}
+    return 'notebook';
+  });
   const [palmRejection, setPalmRejection] = useState<boolean>(false);
   const [eraserMode, setEraserMode] = useState<EraserMode>('stroke');
   const [snapToGrid, setSnapToGrid] = useState<boolean>(false);
@@ -910,6 +935,23 @@ export default function App() {
   }, [activeView, selectedSubjectId, currentUser, handleLogout]);
 
   useEffect(() => {
+    if (!currentUser) {
+      setAllUserBoards([]);
+      return;
+    }
+    let isActive = true;
+    authFetch('/api/boards', {}, handleLogout)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: SavedBoardSummary[]) => {
+        if (isActive && Array.isArray(data)) setAllUserBoards(data);
+      })
+      .catch(() => {});
+    return () => {
+      isActive = false;
+    };
+  }, [currentUser, boards, handleLogout]);
+
+  useEffect(() => {
     const boardId = initialBoardId.current;
     if (!boardId || !currentUser) {
       if (!boardId) setIsInitialBoardLoading(false);
@@ -1107,7 +1149,7 @@ export default function App() {
       try {
         // 1. Draw Infinite Squared Grid (or pure white)
         if (currentPage.background) {
-          drawBoardBackground(ctx, viewport, currentPage.background, baseCellSize);
+          drawBoardBackground(ctx, viewport, currentPage.background, baseCellSize, currentPage.backgroundImage);
         } else {
           drawInfiniteGrid(ctx, viewport, theme, baseCellSize);
         }
@@ -1159,6 +1201,7 @@ export default function App() {
     zoom,
     theme,
     currentPage.background,
+    currentPage.backgroundImage,
     baseCellSize,
     currentPage.strokes,
     currentPage.graphs,
@@ -1605,11 +1648,96 @@ export default function App() {
     }));
   };
 
+  const handleToggleTheme = () => {
+    const nextTheme: ThemeType = theme === 'notebook' || theme === 'clean' ? 'blueprint' : 'notebook';
+    setTheme(nextTheme);
+    try {
+      localStorage.setItem('mathboard_theme_v2', nextTheme);
+    } catch {}
+  };
+
+  const handleImportPdfClick = () => {
+    if (!currentUser?.is_pro) {
+      setIsSubscriptionModalOpen(true);
+      setBoardMessage('Импорт презентаций и PDF доступен на тарифе DOSKA PRO');
+      return;
+    }
+    pdfInputRef.current?.click();
+  };
+
+  const handlePdfFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    try {
+      setIsImportingPdf(true);
+      setPdfImportProgress({ currentPage: 0, totalPages: 0 });
+      const importedPages = await convertPdfToPages(file, (progress) => {
+        setPdfImportProgress(progress);
+      });
+
+      if (!importedPages.length) {
+        setBoardMessage('Не удалось извлечь страницы из PDF файла');
+        return;
+      }
+
+      setAlgebraPages((prev) => [...prev, ...importedPages]);
+      setCurrentAlgebraPageId(importedPages[0].id);
+      setSubjectMode('algebra');
+      setPan(importedPages[0].pan);
+      setZoom(importedPages[0].zoom);
+      markDirty();
+      setBoardMessage(`Успешно импортировано страниц: ${importedPages.length}`);
+    } catch (err) {
+      console.error('PDF import failed:', err);
+      setBoardMessage(err instanceof Error ? err.message : 'Ошибка импорта PDF');
+    } finally {
+      setIsImportingPdf(false);
+    }
+  };
+
+  const handleQuickStart = (background: BoardBackground, subjectId = 'math') => {
+    setIsGuest(true);
+    const mode: SubjectMode = subjectId === 'geometry' ? 'geometry' : 'algebra';
+    const subjectLabel = labelForSubject(subjectId);
+    const newPage = makeEmptyPage(mode, background);
+    newPage.pan = {
+      x: typeof window !== 'undefined' ? window.innerWidth / 2 : 960,
+      y: typeof window !== 'undefined' ? window.innerHeight / 2 : 540,
+    };
+    newPage.zoom = 1;
+    setAlgebraPages(mode === 'algebra' ? [newPage] : []);
+    setGeometryPages(mode === 'geometry' ? [newPage] : []);
+    setCurrentAlgebraPageId(mode === 'algebra' ? newPage.id : '');
+    setCurrentGeometryPageId(mode === 'geometry' ? newPage.id : '');
+    setSubjectMode(mode);
+    setPan(newPage.pan);
+    setZoom(1);
+    setUndoStack([]);
+    setRedoStack([]);
+    setSelectedSubjectId(subjectId);
+    setActiveBoard({ id: 'guest-' + generateId(), subject: subjectId, title: createAutoTitle(subjectLabel) });
+    dirtyRef.current = true;
+    setSaveStatus('unsaved');
+    setBoardUrl(null);
+    setActiveView('board');
+  };
+
   const handleSaveBoard = async (): Promise<boolean> => {
     if (!activeBoard || !currentPage) return false;
+
+    // Guest user trying to save
+    if (!currentUser) {
+      setAuthNotice('Войдите или зарегистрируйтесь, чтобы сохранить нарисованную доску в свой аккаунт');
+      setIsAuthModalOpen(true);
+      return false;
+    }
+
     setSaveStatus('saving');
-    const id = activeBoard.id || generateId();
-    const persistedPages = pages.map((page) => page.id === currentPageId ? { ...page, pan, zoom } : page);
+    const isGuestBoard = !activeBoard.id || activeBoard.id.startsWith('guest-');
+    const id: string = isGuestBoard || !activeBoard.id ? generateId() : activeBoard.id;
+    const persistedPages = pages.map((page) => (page.id === currentPageId ? { ...page, pan, zoom } : page));
     const data: SavedBoardData = {
       subjectMode,
       algebraPages: subjectMode === 'algebra' ? persistedPages : [],
@@ -1619,17 +1747,45 @@ export default function App() {
     };
 
     try {
-      const response = await authFetch('/api/boards', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, subject: activeBoard.subject, title: activeBoard.title, data }),
-      }, handleLogout);
+      const response = await authFetch(
+        '/api/boards',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, subject: activeBoard.subject, title: activeBoard.title, data }),
+        },
+        handleLogout
+      );
+
+      if (response.status === 401) {
+        setSaveStatus('unsaved');
+        setAuthNotice('Сессия истекла. Войдите снова, чтобы сохранить ваши изменения на доске');
+        setIsAuthModalOpen(true);
+        return false;
+      }
+
       if (!response.ok) throw new Error(`Ошибка сохранения: ${response.status}`);
-      const saved = await response.json() as { title: string };
-      setActiveBoard((current) => current ? { ...current, id, title: saved.title } : current);
+      const saved = (await response.json()) as { title: string };
+      setActiveBoard((current) => (current ? { ...current, id, title: saved.title } : current));
+      setIsGuest(false);
       setBoardUrl(id);
       dirtyRef.current = false;
       setSaveStatus('saved');
+      setBoardMessage('Доска успешно сохранена в ваш аккаунт!');
+      setAllUserBoards((prev) => {
+        const exists = prev.some((b) => b.id === id);
+        if (exists) return prev.map((b) => (b.id === id ? { ...b, title: saved.title } : b));
+        return [
+          {
+            id,
+            subject: activeBoard.subject,
+            title: saved.title,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          ...prev,
+        ];
+      });
       return true;
     } catch (error) {
       setSaveStatus('error');
@@ -1638,6 +1794,18 @@ export default function App() {
     }
   };
   saveBoardRef.current = handleSaveBoard;
+
+  const handleAuthSuccess = async (user: User) => {
+    setCurrentUser(user);
+    setIsAuthModalOpen(false);
+    setAuthNotice('');
+    if (activeView === 'board' && activeBoard) {
+      setBoardMessage('Вы вошли в аккаунт! Сохраняем вашу доску...');
+      setTimeout(() => {
+        void saveBoardRef.current();
+      }, 100);
+    }
+  };
 
   useEffect(() => {
     if (activeView !== 'board' || !activeBoard) return;
@@ -1691,7 +1859,6 @@ export default function App() {
 
   const handleRequestOpenBoard = (id: string) => {
     console.log('Opening board ID:', id);
-    // Переход на доску происходит СРАЗУ, без блокирующих таймеров
     void handleLoadBoard(id);
   };
 
@@ -1715,16 +1882,20 @@ export default function App() {
     setBoardMessage('Поздравляем! Подписка DOSKA PRO активирована. Вся реклама отключена!');
   };
 
-  const handleCreateBoard = (subjectId = selectedSubjectId, background: BoardBackground = 'grid', customTitle?: string) => {
-    if (!currentUser?.is_pro && boards.length >= 3) {
-      setIsCreateBoardOpen(false);
-      setIsSubscriptionModalOpen(true);
-      setBoardMessage('На бесплатном тарифе доступно до 3 досок. Оформите PRO для создания неограниченного числа уроков!');
-      return;
-    }
+  const proceedWithCreateBoard = (
+    subjectId = selectedSubjectId,
+    background: BoardBackground = 'grid',
+    customTitle?: string
+  ) => {
+    setIsGuest(false);
     const mode: SubjectMode = subjectId === 'geometry' ? 'geometry' : 'algebra';
     const subjectLabel = labelForSubject(subjectId);
     const newPage = makeEmptyPage(mode, background);
+    newPage.pan = {
+      x: typeof window !== 'undefined' ? window.innerWidth / 2 : 960,
+      y: typeof window !== 'undefined' ? window.innerHeight / 2 : 540,
+    };
+    newPage.zoom = 1;
     setAlgebraPages(mode === 'algebra' ? [newPage] : []);
     setGeometryPages(mode === 'geometry' ? [newPage] : []);
     setCurrentAlgebraPageId(mode === 'algebra' ? newPage.id : '');
@@ -1735,18 +1906,30 @@ export default function App() {
     setUndoStack([]);
     setRedoStack([]);
     setSelectedSubjectId(subjectId);
-    setSubjects((existing) => existing.some((subject) => subject.id === subjectId)
-      ? existing
-      : [...existing, {
-          id: subjectId,
-          label: subjectLabel !== subjectId ? subjectLabel : (
-            subjectId === 'math' ? 'Математика / Алгебра' :
-            subjectId === 'russian' ? 'Русский язык / Литература' :
-            subjectId === 'physics' ? 'Физика' :
-            subjectId === 'geography' ? 'География / История' :
-            subjectId === 'general' ? 'Общая' : subjectId
-          ),
-        }]);
+    setSubjects((existing) =>
+      existing.some((subject) => subject.id === subjectId)
+        ? existing
+        : [
+            ...existing,
+            {
+              id: subjectId,
+              label:
+                subjectLabel !== subjectId
+                  ? subjectLabel
+                  : subjectId === 'math'
+                  ? 'Математика / Алгебра'
+                  : subjectId === 'russian'
+                  ? 'Русский язык / Литература'
+                  : subjectId === 'physics'
+                  ? 'Физика'
+                  : subjectId === 'geography'
+                  ? 'География / История'
+                  : subjectId === 'general'
+                  ? 'Общая'
+                  : subjectId,
+            },
+          ]
+    );
     const title = customTitle?.trim() || createAutoTitle(subjectLabel);
     setActiveBoard({ id: null, subject: subjectId, title });
     dirtyRef.current = true;
@@ -1755,8 +1938,50 @@ export default function App() {
     setActiveView('board');
   };
 
+  const handleCreateBoard = (
+    subjectId = selectedSubjectId,
+    background: BoardBackground = 'grid',
+    customTitle?: string
+  ) => {
+    if (currentUser && !currentUser.is_pro && allUserBoards.length >= 1) {
+      setIsCreateBoardOpen(false);
+      setPendingCreateAction(() => () => proceedWithCreateBoard(subjectId, background, customTitle));
+      setIsBoardLimitModalOpen(true);
+      return;
+    }
+    proceedWithCreateBoard(subjectId, background, customTitle);
+  };
+
+  const handleConfirmReplaceBoard = async () => {
+    setIsBoardLimitModalOpen(false);
+    if (allUserBoards.length > 0) {
+      const boardToDelete = allUserBoards[0];
+      try {
+        await authFetch(`/api/boards/${encodeURIComponent(boardToDelete.id)}`, { method: 'DELETE' }, handleLogout);
+        setBoards((prev) => prev.filter((b) => b.id !== boardToDelete.id));
+        setAllUserBoards((prev) => prev.filter((b) => b.id !== boardToDelete.id));
+      } catch (err) {
+        console.error('Failed to delete existing board for replacement:', err);
+      }
+    }
+    if (pendingCreateAction) {
+      pendingCreateAction();
+      setPendingCreateAction(null);
+    } else {
+      setIsCreateBoardOpen(true);
+    }
+  };
+
   const handleReturnToDashboard = async () => {
-    if (activeBoard && (dirtyRef.current || !activeBoard.id)) {
+    if (isGuest || !currentUser) {
+      if (dirtyRef.current) {
+        const confirmLeave = window.confirm(
+          'У вас есть несохраненные рисунки. Выйти в главное меню без сохранения в аккаунт?'
+        );
+        if (!confirmLeave) return;
+      }
+      setIsGuest(false);
+    } else if (activeBoard && (dirtyRef.current || !activeBoard.id)) {
       const saved = await handleSaveBoard();
       if (!saved) return;
     }
@@ -1786,6 +2011,7 @@ export default function App() {
     const response = await authFetch(`/api/boards/${encodeURIComponent(id)}`, { method: 'DELETE' }, handleLogout);
     if (!response.ok) throw new Error(`Ошибка удаления: ${response.status}`);
     setBoards((existing) => existing.filter((board) => board.id !== id));
+    setAllUserBoards((existing) => existing.filter((board) => board.id !== id));
   };
 
   const handleAddSubject = (label: string) => {
@@ -1857,7 +2083,7 @@ export default function App() {
         const context = pageCanvas.getContext('2d');
         if (!context) return '';
         const pageViewport: Viewport = { pan: page.pan, zoom: page.zoom, width: 1600, height: 900 };
-        drawBoardBackground(context, pageViewport, page.background || 'grid', baseCellSize);
+        drawBoardBackground(context, pageViewport, page.background || 'grid', baseCellSize, page.backgroundImage);
         page.graphs.forEach((graph) => drawGraphPlot(context, graph, pageViewport));
         page.strokes.forEach((stroke) => drawStroke(context, stroke, pageViewport));
         page.mathElements.forEach((element) => {
@@ -1969,22 +2195,6 @@ export default function App() {
     );
   }
 
-  if (!currentUser) {
-    return (
-      <>
-        <AuthModal
-          onSuccess={(user) => setCurrentUser(user)}
-          onOpenTerms={() => setIsTermsModalOpen(true)}
-          onOpenPrivacy={() => setIsPrivacyModalOpen(true)}
-          onOpenContacts={() => setIsContactsModalOpen(true)}
-        />
-        <TermsModal isOpen={isTermsModalOpen} onClose={() => setIsTermsModalOpen(false)} />
-        <PrivacyModal isOpen={isPrivacyModalOpen} onClose={() => setIsPrivacyModalOpen(false)} />
-        <ContactsModal isOpen={isContactsModalOpen} onClose={() => setIsContactsModalOpen(false)} />
-      </>
-    );
-  }
-
   return (
     <div
       ref={containerRef}
@@ -2006,10 +2216,15 @@ export default function App() {
           isLoading={isLoadingBoards}
           currentUser={currentUser}
           onSelectSubject={setSelectedSubjectId}
+          onQuickStart={handleQuickStart}
+          onOpenAuth={() => {
+            setAuthNotice('');
+            setIsAuthModalOpen(true);
+          }}
           onCreateBoard={() => {
-            if (!currentUser?.is_pro && boards.length >= 3) {
-              setIsSubscriptionModalOpen(true);
-              setBoardMessage('На бесплатном тарифе доступно до 3 досок. Оформите PRO для создания неограниченного числа уроков!');
+            if (currentUser && !currentUser.is_pro && allUserBoards.length >= 1) {
+              setPendingCreateAction(() => () => setIsCreateBoardOpen(true));
+              setIsBoardLimitModalOpen(true);
               return;
             }
             setIsCreateBoardOpen(true);
@@ -2063,6 +2278,9 @@ export default function App() {
               isPro={Boolean(currentUser?.is_pro)}
               onOpenSubscription={() => setIsSubscriptionModalOpen(true)}
               onToggleFullscreen={handleToggleFullscreen}
+              isGuest={isGuest || !currentUser}
+              onImportPdf={handleImportPdfClick}
+              onToggleTheme={handleToggleTheme}
             />
           )}
 
@@ -2286,6 +2504,54 @@ export default function App() {
         onClose={() => setIsAdminPanelOpen(false)}
         currentUser={currentUser}
         onCurrentUserUpdated={(updated) => setCurrentUser(updated)}
+      />
+
+      <input
+        ref={pdfInputRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={handlePdfFileChange}
+      />
+
+      {isImportingPdf && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 text-white max-w-sm w-full mx-4 shadow-2xl flex flex-col items-center gap-4 text-center">
+            <LoaderCircle className="w-10 h-10 animate-spin text-sky-400" />
+            <div>
+              <h3 className="text-lg font-bold">Импорт PDF документа</h3>
+              <p className="text-sm text-slate-300 mt-1">
+                {pdfImportProgress.totalPages > 0
+                  ? `Конвертация страницы ${pdfImportProgress.currentPage} из ${pdfImportProgress.totalPages}...`
+                  : 'Обработка файла...'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <BoardLimitModal
+        isOpen={isBoardLimitModalOpen}
+        onClose={() => setIsBoardLimitModalOpen(false)}
+        existingBoardTitle={allUserBoards[0]?.title || 'Моя доска'}
+        onConfirmReplace={handleConfirmReplaceBoard}
+        onOpenSubscription={() => {
+          setIsBoardLimitModalOpen(false);
+          setIsSubscriptionModalOpen(true);
+        }}
+      />
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          setAuthNotice('');
+        }}
+        notice={authNotice}
+        onSuccess={handleAuthSuccess}
+        onOpenTerms={() => setIsTermsModalOpen(true)}
+        onOpenPrivacy={() => setIsPrivacyModalOpen(true)}
+        onOpenContacts={() => setIsContactsModalOpen(true)}
       />
 
       {/* Legal Modals */}

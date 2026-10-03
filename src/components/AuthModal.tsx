@@ -9,24 +9,32 @@ import {
   LoaderCircle,
   AlertCircle,
   Info,
+  X,
 } from 'lucide-react';
 import { loginUser, registerUser } from '../utils/auth';
 import { User } from '../types/auth';
 import { Footer } from './Footer';
 
 interface AuthModalProps {
+  isOpen?: boolean;
   onSuccess: (user: User) => void;
+  onClose?: () => void;
+  notice?: string;
   onOpenTerms?: () => void;
   onOpenPrivacy?: () => void;
   onOpenContacts?: () => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
+  isOpen = true,
   onSuccess,
+  onClose,
+  notice,
   onOpenTerms,
   onOpenPrivacy,
   onOpenContacts,
 }) => {
+  if (!isOpen) return null;
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -90,11 +98,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-start overflow-y-auto bg-slate-950/60 p-4 py-8 backdrop-blur-md">
+    <div
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget && onClose) onClose();
+      }}
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-start overflow-y-auto bg-slate-950/60 p-4 py-8 backdrop-blur-md"
+    >
       {/* Background patterned grid */}
       <div className="pointer-events-none fixed inset-0 opacity-20 [background-image:linear-gradient(rgba(16,94,76,0.3)_1px,transparent_1px),linear-gradient(90deg,rgba(16,94,76,0.3)_1px,transparent_1px)] [background-size:32px_32px]" />
 
       <div className="relative w-full max-w-md rounded-2xl border border-emerald-900/15 bg-white p-7 shadow-2xl transition-all sm:p-9">
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            title="Закрыть"
+            className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 transition"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
+
         {/* Brand header */}
         <div className="text-center">
           <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-xl bg-emerald-800 text-white shadow-md shadow-emerald-900/20">
@@ -110,6 +134,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               : 'Создайте личный кабинет для сохранения уроков'}
           </p>
         </div>
+
+        {/* Notice Banner */}
+        {notice && (
+          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs font-semibold text-amber-900 flex items-start gap-2">
+            <Info className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+            <span>{notice}</span>
+          </div>
+        )}
 
         {/* Tab switcher: Login / Register */}
         <div className="mt-6 flex rounded-xl bg-slate-100 p-1 text-sm font-semibold">

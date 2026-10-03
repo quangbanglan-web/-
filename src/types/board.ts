@@ -40,7 +40,11 @@ export type BoardBackground =
   | 'map-world'
   | 'map_world'
   | 'map-russia'
-  | 'map_russia';
+  | 'map_russia'
+  | 'map-europe'
+  | 'map_europe'
+  | 'map-history'
+  | 'map_history';
 
 
 export interface Point {
@@ -112,6 +116,7 @@ export interface PageData {
   pan: { x: number; y: number };
   zoom: number;
   background?: BoardBackground;
+  backgroundImage?: string;
 }
 
 export interface ToolbarCustomization {

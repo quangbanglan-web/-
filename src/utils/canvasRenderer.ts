@@ -7,6 +7,19 @@ export interface Viewport {
   height: number;
 }
 
+const mapImageCache: Record<string, HTMLImageElement> = {};
+
+export function getCachedMapImage(src: string): HTMLImageElement | null {
+  if (typeof window === 'undefined') return null;
+  if (!mapImageCache[src]) {
+    const img = new Image();
+    img.src = src;
+    mapImageCache[src] = img;
+  }
+  const img = mapImageCache[src];
+  return img.complete && img.naturalWidth > 0 ? img : null;
+}
+
 export const THEME_CONFIGS: Record<
   ThemeType,
   {
@@ -125,13 +138,14 @@ export function drawInfiniteGrid(
   }
   ctx.stroke();
 
-  // 3. Margin vertical red line for school notebook
+  // 3. Margin vertical red line for school notebook:
+  // Strictly 75px (~2cm / 4 cells) from left edge of notebook sheet (-960px in 1920x1080)
   if (config.marginLine) {
-    const marginWorldX = 0;
+    const marginWorldX = -960 + 75; // -885px
     const screenMarginX = Math.round((marginWorldX + pan.x) * zoom);
     if (screenMarginX >= 0 && screenMarginX <= width) {
       ctx.strokeStyle = config.marginLine;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = Math.max(1.5, 2 * zoom);
       ctx.beginPath();
       ctx.moveTo(screenMarginX, 0);
       ctx.lineTo(screenMarginX, height);
@@ -146,9 +160,39 @@ export function drawBoardBackground(
   ctx: CanvasRenderingContext2D,
   viewport: Viewport,
   background: BoardBackground,
-  baseCellSize = 32
+  baseCellSize = 32,
+  backgroundImage?: string
 ) {
   const { pan, zoom, width, height } = viewport;
+
+  if (backgroundImage) {
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, width, height);
+
+    const screenX = (-960 + pan.x) * zoom;
+    const screenY = (-540 + pan.y) * zoom;
+    const screenW = 1920 * zoom;
+    const screenH = 1080 * zoom;
+
+    const img = getCachedMapImage(backgroundImage);
+    if (img) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+      ctx.shadowBlur = Math.min(24, 16 * zoom);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(screenX, screenY, screenW, screenH);
+      ctx.restore();
+
+      ctx.drawImage(img, screenX, screenY, screenW, screenH);
+    } else {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(screenX, screenY, screenW, screenH);
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(screenX, screenY, screenW, screenH);
+    }
+    return;
+  }
 
   if (background === 'grid' || background === 'math_grid') {
     drawInfiniteGrid(ctx, viewport, 'notebook', baseCellSize);
@@ -188,12 +232,12 @@ export function drawBoardBackground(
     }
     ctx.stroke();
 
-    // Red vertical margin line locked to world coordinate x = 0
-    const marginWorldX = 0;
+    // Red vertical margin line strictly 75px from left edge of notebook sheet (-960px)
+    const marginWorldX = -960 + 75; // -885px
     const screenMarginX = Math.round((marginWorldX + pan.x) * zoom);
     if (screenMarginX >= 0 && screenMarginX <= width) {
       ctx.strokeStyle = '#f87171';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = Math.max(1.5, 2 * zoom);
       ctx.beginPath();
       ctx.moveTo(screenMarginX, 0);
       ctx.lineTo(screenMarginX, height);
@@ -278,8 +322,10 @@ export function drawBoardBackground(
     return;
   }
 
-  // Vector maps: map_world or map_russia locked to world coordinates (centered at 0, 0, 1920x1080 bounds)
-  ctx.fillStyle = '#f0f9ff';
+  // High-Resolution Subject Maps: world, russia, europe, history
+  // Rendered in world coordinates centered at (-960, -540, 1920x1080)
+  const isHistory = background.includes('history');
+  ctx.fillStyle = isHistory ? '#fbf8f1' : '#f0f9ff';
   ctx.fillRect(0, 0, width, height);
 
   const mapOriginX = -960;
@@ -292,87 +338,37 @@ export function drawBoardBackground(
   const screenMapW = mapW * zoom;
   const screenMapH = mapH * zoom;
 
-  // Ocean frame
-  ctx.fillStyle = '#e0f2fe';
+  let mapSrc = '/maps/world.svg';
+  let mapTitle = 'КАРТА МИРА';
+
+  if (background.includes('russia')) {
+    mapSrc = '/maps/russia.svg';
+    mapTitle = 'КОНТУРНАЯ КАРТА РОССИИ';
+  } else if (background.includes('europe')) {
+    mapSrc = '/maps/europe.svg';
+    mapTitle = 'КОНТУРНАЯ КАРТА ЕВРОПЫ';
+  } else if (background.includes('history')) {
+    mapSrc = '/maps/history.svg';
+    mapTitle = 'ИСТОРИЧЕСКАЯ КАРТА';
+  }
+
+  // Draw background frame/ocean
+  ctx.fillStyle = isHistory ? '#fdfaf2' : '#ffffff';
   ctx.fillRect(screenMapX, screenMapY, screenMapW, screenMapH);
-  ctx.strokeStyle = '#bae6fd';
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = isHistory ? '#b45309' : '#0284c7';
+  ctx.lineWidth = Math.max(1.5, 2 * zoom);
   ctx.strokeRect(screenMapX, screenMapY, screenMapW, screenMapH);
 
-  // Subtle coordinate grid on map
-  ctx.strokeStyle = 'rgba(186, 230, 253, 0.6)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let u = 0.2; u < 1; u += 0.2) {
-    const gx = screenMapX + u * screenMapW;
-    ctx.moveTo(gx, screenMapY);
-    ctx.lineTo(gx, screenMapY + screenMapH);
+  // Cached SVG image rendering
+  const img = getCachedMapImage(mapSrc);
+  if (img) {
+    ctx.drawImage(img, screenMapX, screenMapY, screenMapW, screenMapH);
+  } else {
+    // Elegant fallback during initial load
+    ctx.fillStyle = isHistory ? '#78350f' : '#0369a1';
+    ctx.font = `600 ${Math.max(14, Math.round(18 * zoom))}px 'JetBrains Mono', sans-serif`;
+    ctx.fillText(`${mapTitle} (Загрузка...)`, screenMapX + 30 * zoom, screenMapY + 50 * zoom);
   }
-  for (let v = 0.25; v < 1; v += 0.25) {
-    const gy = screenMapY + v * screenMapH;
-    ctx.moveTo(screenMapX, gy);
-    ctx.lineTo(screenMapX + screenMapW, gy);
-  }
-  ctx.stroke();
-
-  const isWorld = background === 'map_world' || background === 'map-world';
-  const polygons: [number, number][][] = isWorld
-    ? [
-        // North America
-        [[0.08, 0.16], [0.18, 0.12], [0.28, 0.15], [0.32, 0.22], [0.27, 0.35], [0.22, 0.44], [0.18, 0.52], [0.13, 0.45], [0.08, 0.30]],
-        // South America
-        [[0.27, 0.53], [0.35, 0.56], [0.39, 0.68], [0.35, 0.85], [0.30, 0.92], [0.26, 0.74], [0.24, 0.60]],
-        // Europe
-        [[0.46, 0.18], [0.55, 0.14], [0.58, 0.24], [0.52, 0.35], [0.46, 0.34], [0.44, 0.25]],
-        // Africa
-        [[0.45, 0.38], [0.58, 0.36], [0.62, 0.52], [0.57, 0.72], [0.51, 0.76], [0.46, 0.60], [0.42, 0.45]],
-        // Asia
-        [[0.58, 0.14], [0.82, 0.12], [0.92, 0.22], [0.88, 0.38], [0.78, 0.45], [0.72, 0.52], [0.66, 0.45], [0.62, 0.32]],
-        // Australia
-        [[0.78, 0.65], [0.88, 0.63], [0.91, 0.75], [0.85, 0.84], [0.77, 0.78]],
-        // Greenland
-        [[0.32, 0.08], [0.40, 0.07], [0.38, 0.18], [0.33, 0.16]]
-      ]
-    : [
-        // Russia mainland
-        [
-          [0.15, 0.22], [0.24, 0.15], [0.36, 0.14], [0.48, 0.12], [0.62, 0.11], 
-          [0.76, 0.12], [0.88, 0.18], [0.92, 0.32], [0.84, 0.48], [0.76, 0.54],
-          [0.64, 0.52], [0.54, 0.58], [0.45, 0.64], [0.36, 0.62], [0.26, 0.55],
-          [0.18, 0.46], [0.12, 0.34]
-        ],
-        // Kamchatka
-        [[0.89, 0.25], [0.94, 0.34], [0.93, 0.44], [0.89, 0.42], [0.88, 0.30]],
-        // Sakhalin
-        [[0.86, 0.38], [0.88, 0.42], [0.87, 0.52], [0.85, 0.50]],
-        // Crimea
-        [[0.22, 0.56], [0.25, 0.55], [0.26, 0.60], [0.23, 0.61]],
-        // Novaya Zemlya
-        [[0.48, 0.06], [0.52, 0.08], [0.50, 0.16], [0.46, 0.14]]
-      ];
-
-  ctx.strokeStyle = '#0284c7';
-  ctx.fillStyle = '#f0fdf4';
-  ctx.lineWidth = Math.max(1, 1.5 * zoom);
-
-  for (const poly of polygons) {
-    ctx.beginPath();
-    poly.forEach(([u, v], idx) => {
-      const wx = mapOriginX + u * mapW;
-      const wy = mapOriginY + v * mapH;
-      const sx = (wx + pan.x) * zoom;
-      const sy = (wy + pan.y) * zoom;
-      if (idx === 0) ctx.moveTo(sx, sy);
-      else ctx.lineTo(sx, sy);
-    });
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  ctx.fillStyle = '#0369a1';
-  ctx.font = `600 ${Math.max(12, Math.round(14 * zoom))}px 'JetBrains Mono', sans-serif`;
-  ctx.fillText(isWorld ? 'КАРТА МИРА' : 'КОНТУРНАЯ КАРТА РОССИИ', screenMapX + 16 * zoom, screenMapY + 28 * zoom);
 
   ctx.restore();
 }

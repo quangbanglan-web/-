@@ -59,6 +59,8 @@ interface DashboardProps {
   onOpenPrivacy?: () => void;
   onOpenContacts?: () => void;
   onOpenAccountSettings?: () => void;
+  onQuickStart?: (bg: import('../types/board').BoardBackground, subjectId?: string) => void;
+  onOpenAuth?: () => void;
 }
 
 const subjectIcons = [Calculator, Atom, Code2, Map, Landmark, Compass, Shapes];
@@ -115,6 +117,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onOpenPrivacy,
   onOpenContacts,
   onOpenAccountSettings,
+  onQuickStart,
+  onOpenAuth,
 }) => {
   const [newSubjectName, setNewSubjectName] = useState('');
   const [subjectError, setSubjectError] = useState('');
@@ -267,9 +271,60 @@ export const Dashboard: React.FC<DashboardProps> = ({
               )}
             </div>
           ) : (
-            <span className="hidden text-xs font-medium text-slate-500 sm:block">Уроки и материалы</span>
+            <div className="flex items-center gap-3">
+              {onOpenAuth && (
+                <button
+                  type="button"
+                  onClick={onOpenAuth}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-900 transition active:scale-95"
+                >
+                  <UserIcon className="h-3.5 w-3.5" />
+                  <span>Войти / Регистрация</span>
+                </button>
+              )}
+            </div>
           )}
         </header>
+
+        {/* Quick Start 1-Click Banner for Guests & Visitors */}
+        {!currentUser && onQuickStart && (
+          <div className="mt-8 rounded-2xl border border-emerald-900/15 bg-white/95 p-6 shadow-md backdrop-blur-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+              <div>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 mb-2">
+                  🚀 Быстрый старт в 1 клик
+                </span>
+                <h2 className="text-xl font-bold text-slate-900">Начните урок прямо сейчас без регистрации</h2>
+                <p className="mt-1 text-xs sm:text-sm text-slate-600">
+                  Гостевой режим с поддержкой стилуса, формул и геометрических фигур. Сохранить доску в аккаунт можно в любой момент.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => onQuickStart('clean', 'universal')}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white border border-slate-300 px-4 py-3 text-xs sm:text-sm font-bold text-slate-800 shadow-xs hover:border-emerald-700 hover:bg-slate-50 transition active:scale-95"
+                >
+                  📄 Чистый лист
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onQuickStart('math_grid', 'math')}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-300 px-4 py-3 text-xs sm:text-sm font-bold text-emerald-950 shadow-xs hover:bg-emerald-100 transition active:scale-95"
+                >
+                  📐 В клетку (Математика)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onQuickStart('ruled', 'russian')}
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-300 px-4 py-3 text-xs sm:text-sm font-bold text-blue-950 shadow-xs hover:bg-blue-100 transition active:scale-95"
+                >
+                  📖 В линейку (Русский язык)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mb-7 mt-8 max-w-2xl">
           <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-emerald-800">Главное меню</p>

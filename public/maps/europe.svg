@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <style>
+      .ocean { fill: #f0f7ff; }
+      .land { fill: #ffffff; stroke: #2563eb; stroke-width: 1.8; stroke-linejoin: round; }
+      .island { fill: #ffffff; stroke: #2563eb; stroke-width: 1.4; }
+      .border { fill: none; stroke: #94a3b8; stroke-width: 1.2; stroke-dasharray: 4,3; }
+      .river { fill: none; stroke: #60a5fa; stroke-width: 1.8; }
+      .lake { fill: #dbeafe; stroke: #3b82f6; stroke-width: 1.2; }
+      .city { fill: #dc2626; stroke: #ffffff; stroke-width: 2; }
+      .city-label { font-family: 'Segoe UI', sans-serif; font-size: 13px; font-weight: 700; fill: #1e293b; }
+      .sea-label { font-family: 'Segoe UI', sans-serif; font-size: 14px; font-style: italic; fill: #1d4ed8; }
+      .country-label { font-family: 'Segoe UI', sans-serif; font-size: 13px; font-weight: 600; fill: #64748b; letter-spacing: 1px; }
+      .title { font-family: 'JetBrains Mono', 'Segoe UI', sans-serif; font-size: 20px; font-weight: 700; fill: #1d4ed8; }
+      .sub { font-family: 'Segoe UI', sans-serif; font-size: 13px; fill: #64748b; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" class="ocean" />
+
+  <!-- Scandinavia -->
+  <path d="M 760,110 L 890,90 L 980,140 L 940,290 L 860,370 L 780,350 L 720,280 L 710,190 Z" class="land" />
+
+  <!-- British Isles -->
+  <path d="M 520,380 L 590,320 L 610,410 L 580,510 L 510,480 Z" class="island" />
+  <path d="M 460,420 L 490,400 L 480,480 L 440,460 Z" class="island" />
+
+  <!-- Continental Europe -->
+  <path d="
+    M 540,540 L 620,530 L 730,470 L 820,440 L 930,450 L 1050,440 
+    L 1250,420 L 1450,430 L 1550,530 L 1480,680 L 1380,740 L 1290,750 
+    L 1210,790 L 1150,850 L 1090,830 L 1080,780 L 990,770 L 920,830 
+    L 870,890 L 830,860 L 870,760 L 800,750 L 710,740 L 610,770 
+    L 460,820 L 430,730 L 530,680 L 500,600 Z
+  " class="land" />
+
+  <!-- Italian Peninsula -->
+  <path d="M 870,760 L 930,790 L 970,890 L 1010,910 L 970,950 L 940,910 L 900,840 Z" class="land" />
+  <ellipse cx="910" cy="940" rx="30" ry="18" class="island" /> <!-- Sicily -->
+
+  <!-- Iberian Peninsula -->
+  <path d="M 430,730 L 530,680 L 540,780 L 490,870 L 390,860 L 370,790 Z" class="land" />
+
+  <!-- Greece & Balkans -->
+  <path d="M 1090,780 L 1160,790 L 1190,870 L 1140,940 L 1100,900 L 1080,830 Z" class="land" />
+  <ellipse cx="1180" cy="970" rx="40" ry="10" class="island" /> <!-- Crete -->
+
+  <!-- Major Rivers -->
+  <!-- Rhine -->
+  <path d="M 720,700 Q 700,620 680,540" class="river" />
+  <!-- Danube -->
+  <path d="M 760,710 Q 940,710 1120,730 T 1320,740" class="river" />
+  <!-- Dnieper -->
+  <path d="M 1290,460 Q 1320,580 1280,730" class="river" />
+
+  <!-- Seas -->
+  <text x="440" y="300" class="sea-label">Атлантический океан</text>
+  <text x="630" y="440" class="sea-label">Северное море</text>
+  <text x="830" y="340" class="sea-label">Балтийское море</text>
+  <text x="730" y="930" class="sea-label">Средиземное море</text>
+  <text x="1350" y="810" class="sea-label">Чёрное море</text>
+
+  <!-- Cities -->
+  <circle cx="580" cy="450" r="4.5" class="city" />
+  <text x="590" y="455" class="city-label">Лондон</text>
+
+  <circle cx="640" cy="620" r="4.5" class="city" />
+  <text x="650" y="625" class="city-label">Париж</text>
+
+  <circle cx="820" cy="560" r="4.5" class="city" />
+  <text x="830" y="565" class="city-label">Берлин</text>
+
+  <circle cx="940" cy="840" r="4.5" class="city" />
+  <text x="950" y="845" class="city-label">Рим</text>
+
+  <circle cx="430" cy="790" r="4.5" class="city" />
+  <text x="440" y="795" class="city-label">Мадрид</text>
+
+  <circle cx="1380" cy="480" r="5" class="city" />
+  <text x="1390" y="485" class="city-label">Москва</text>
+
+  <!-- Title Card -->
+  <rect x="20" y="20" width="1880" height="1040" fill="none" stroke="#2563eb" stroke-width="2" rx="12" />
+  <rect x="40" y="40" width="360" height="75" fill="white" fill-opacity="0.95" stroke="#93c5fd" stroke-width="1.5" rx="8" />
+  <text x="60" y="72" class="title">КОНТУРНАЯ КАРТА ЕВРОПЫ</text>
+  <text x="60" y="96" class="sub">Государства, реки и моря • Уроки географии</text>
+</svg>

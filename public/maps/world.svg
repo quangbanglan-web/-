@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <style>
+      .ocean { fill: #f0f7ff; }
+      .grid { stroke: #d0e3f7; stroke-width: 1; stroke-dasharray: 4,4; }
+      .equator { stroke: #93c5fd; stroke-width: 1.5; }
+      .tropic { stroke: #bfdbfe; stroke-width: 1; stroke-dasharray: 6,4; }
+      .land { fill: #fdfefe; stroke: #2563eb; stroke-width: 1.5; stroke-linejoin: round; }
+      .island { fill: #fdfefe; stroke: #2563eb; stroke-width: 1.2; }
+      .lake { fill: #e0f2fe; stroke: #3b82f6; stroke-width: 1; }
+      .title { font-family: 'JetBrains Mono', 'Segoe UI', sans-serif; font-size: 20px; font-weight: 700; fill: #1e40af; }
+      .subtitle { font-family: 'Segoe UI', sans-serif; font-size: 13px; fill: #60a5fa; }
+      .label { font-family: 'Segoe UI', sans-serif; font-size: 13px; font-weight: 600; fill: #1d4ed8; }
+      .latlon { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #94a3b8; }
+    </style>
+  </defs>
+
+  <!-- Ocean Background -->
+  <rect width="1920" height="1080" class="ocean" />
+
+  <!-- Latitude Grids -->
+  <!-- Polar Circles (66.5° N/S) -->
+  <line x1="60" y1="180" x2="1860" y2="180" class="tropic" />
+  <text x="1865" y="184" class="latlon">66.5°N</text>
+  <line x1="60" y1="900" x2="1860" y2="900" class="tropic" />
+  <text x="1865" y="904" class="latlon">66.5°S</text>
+
+  <!-- Tropics (23.5° N/S) -->
+  <line x1="60" y1="390" x2="1860" y2="390" class="tropic" />
+  <text x="1865" y="394" class="latlon">23.5°N</text>
+  <line x1="60" y1="690" x2="1860" y2="690" class="tropic" />
+  <text x="1865" y="694" class="latlon">23.5°S</text>
+
+  <!-- Equator (0°) -->
+  <line x1="60" y1="540" x2="1860" y2="540" class="equator" />
+  <text x="1865" y="544" class="latlon" font-weight="bold">0° ЭКВАТОР</text>
+
+  <!-- Longitude Grids (Meridians) -->
+  <line x1="180" y1="60" x2="180" y2="1020" class="grid" />
+  <line x1="360" y1="60" x2="360" y2="1020" class="grid" />
+  <line x1="540" y1="60" x2="540" y2="1020" class="grid" />
+  <line x1="720" y1="60" x2="720" y2="1020" class="grid" />
+  <line x1="900" y1="60" x2="900" y2="1020" class="grid" />
+  <!-- Prime Meridian (0°) -->
+  <line x1="960" y1="60" x2="960" y2="1020" class="equator" />
+  <text x="965" y="75" class="latlon" font-weight="bold">0° ГРИНВИЧ</text>
+  <line x1="1140" y1="60" x2="1140" y2="1020" class="grid" />
+  <line x1="1320" y1="60" x2="1320" y2="1020" class="grid" />
+  <line x1="1500" y1="60" x2="1500" y2="1020" class="grid" />
+  <line x1="1680" y1="60" x2="1680" y2="1020" class="grid" />
+
+  <!-- Continents Contours -->
+  <!-- North America -->
+  <path d="M 190,140 L 260,110 L 380,105 L 480,135 L 530,190 L 510,240 L 460,250 L 480,310 L 460,350 L 480,410 L 460,450 L 410,480 L 380,510 L 370,550 L 350,560 L 340,510 L 310,460 L 270,410 L 230,370 L 200,310 L 160,250 L 170,180 Z" class="land" />
+  <!-- Hudson Bay -->
+  <path d="M 410,180 Q 430,220 390,240 Q 370,200 410,180 Z" class="lake" />
+  <!-- Great Lakes -->
+  <circle cx="430" cy="330" r="14" class="lake" />
+
+  <!-- Greenland -->
+  <path d="M 640,90 L 750,80 L 790,140 L 730,220 L 680,210 L 640,150 Z" class="land" />
+
+  <!-- South America -->
+  <path d="M 370,570 L 430,550 L 510,580 L 580,630 L 620,700 L 580,780 L 530,860 L 490,950 L 450,960 L 440,900 L 440,810 L 420,730 L 380,660 L 360,600 Z" class="land" />
+
+  <!-- Europe -->
+  <path d="M 870,220 L 920,200 L 980,190 L 1020,220 L 1010,260 L 980,270 L 970,320 L 940,360 L 900,380 L 870,430 L 830,440 L 810,390 L 840,350 L 850,290 L 830,260 Z" class="land" />
+  <!-- British Isles -->
+  <path d="M 820,280 L 845,260 L 850,300 L 830,320 Z" class="island" />
+  <path d="M 800,285 L 815,275 L 820,300 L 805,310 Z" class="island" />
+  <!-- Scandinavia -->
+  <path d="M 940,120 L 990,110 L 1000,180 L 960,220 L 930,180 Z" class="land" />
+
+  <!-- Africa -->
+  <path d="M 860,430 L 950,420 L 1030,440 L 1100,500 L 1140,550 L 1120,600 L 1060,720 L 1020,830 L 980,880 L 940,860 L 920,790 L 870,680 L 820,590 L 800,520 L 820,460 Z" class="land" />
+  <!-- Madagascar -->
+  <path d="M 1160,730 L 1180,720 L 1195,780 L 1170,820 L 1150,780 Z" class="island" />
+
+  <!-- Asia -->
+  <path d="M 1020,210 L 1160,160 L 1320,130 L 1480,120 L 1600,140 L 1710,180 L 1750,230 L 1710,300 L 1630,340 L 1570,390 L 1500,450 L 1400,470 L 1340,410 L 1290,440 L 1240,520 L 1180,550 L 1140,490 L 1170,410 L 1100,360 L 1040,320 L 1020,260 Z" class="land" />
+  <!-- India Subcontinent -->
+  <path d="M 1260,430 L 1320,440 L 1360,530 L 1320,610 L 1280,560 L 1250,490 Z" class="land" />
+  <!-- Japan Archipelago -->
+  <path d="M 1660,320 Q 1690,360 1670,410 Q 1650,370 1660,320 Z" class="island" />
+
+  <!-- Australia & Oceania -->
+  <path d="M 1480,680 L 1580,660 L 1660,700 L 1700,770 L 1670,860 L 1590,890 L 1500,860 L 1450,790 L 1450,730 Z" class="land" />
+  <path d="M 1720,830 L 1740,820 L 1760,880 L 1735,920 Z" class="island" />
+
+  <!-- Antarctica -->
+  <path d="M 300,1020 L 600,1000 L 960,990 L 1350,1000 L 1700,1020 L 1750,1060 L 250,1060 Z" class="land" />
+
+  <!-- Labels -->
+  <text x="280" y="320" class="label">СЕВЕРНАЯ АМЕРИКА</text>
+  <text x="460" y="710" class="label">ЮЖНАЯ АМЕРИКА</text>
+  <text x="880" y="310" class="label">ЕВРОПА</text>
+  <text x="910" y="630" class="label">АФРИКА</text>
+  <text x="1350" y="300" class="label">АЗИЯ</text>
+  <text x="1520" y="780" class="label">АВСТРАЛИЯ</text>
+  <text x="900" y="1035" class="label">АНТАРКТИДА</text>
+
+  <text x="80" y="520" class="subtitle">ТИХИЙ ОКЕАН</text>
+  <text x="650" y="500" class="subtitle">АТЛАНТИЧЕСКИЙ ОКЕАН</text>
+  <text x="1310" y="690" class="subtitle">ИНДИЙСКИЙ ОКЕАН</text>
+  <text x="1740" y="520" class="subtitle">ТИХИЙ ОКЕАН</text>
+  <text x="1050" y="100" class="subtitle">СЕВЕРНЫЙ ЛЕДОВИТЫЙ ОКЕАН</text>
+
+  <!-- Title & Border Frame -->
+  <rect x="20" y="20" width="1880" height="1040" fill="none" stroke="#2563eb" stroke-width="2" rx="12" />
+  <rect x="40" y="40" width="340" height="70" fill="white" fill-opacity="0.9" stroke="#93c5fd" stroke-width="1.5" rx="8" />
+  <text x="60" y="72" class="title">КОНТУРНАЯ КАРТА МИРА</text>
+  <text x="60" y="94" class="subtitle">Масштаб 1 : 50 000 000 • Проекция Меркатора</text>
+</svg>
