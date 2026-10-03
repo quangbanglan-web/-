@@ -4,8 +4,12 @@ import App from './App.tsx';
 import 'katex/dist/katex.min.css';
 import './index.css';
 
+import { ThemeProvider } from './contexts/ThemeContext';
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ThemeProvider>
+      <App />
+    </ThemeProvider>
   </StrictMode>,
 );

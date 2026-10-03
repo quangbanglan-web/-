@@ -177,24 +177,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       aria-label="Панель инструментов"
       onPointerDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
-      style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-      }}
-      className={`fixed z-30 flex items-center gap-1.5 p-1.5 rounded-2xl shadow-2xl backdrop-blur-xl border select-none transition-shadow ${
+      className={`fixed z-30 flex items-center gap-1.5 p-1.5 rounded-3xl shadow-2xl backdrop-blur-xl border select-none transition-shadow ${
         isDark
-          ? 'bg-slate-900/95 border-slate-700/80 shadow-slate-950/60 text-slate-100'
-          : 'bg-white/95 border-slate-200/90 shadow-slate-900/15 text-slate-800'
-      }`}
+          ? 'bg-slate-900/80 border-slate-700/80 shadow-slate-950/60 text-slate-100'
+          : 'bg-white/80 border-slate-200/90 shadow-[0_8px_30px_rgb(0,0,0,0.12)] text-slate-800'
+      } bottom-16 left-1/2 -translate-x-1/2`}
     >
-      {/* 0. Free Drag Handle */}
-      <div
-        onPointerDown={handlePointerDownDrag}
-        title="Зажмите и потяните, чтобы переместить панель в любое удобное место экрана"
-        className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-black/5 dark:hover:bg-white/5 cursor-grab active:cursor-grabbing transition"
-      >
-        <GripVertical className="w-4 h-5" />
-      </div>
+
 
       {/* 1. Main Drawing Tools */}
       <div className="flex items-center gap-1">

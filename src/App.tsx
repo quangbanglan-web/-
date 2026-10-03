@@ -39,6 +39,7 @@ import { AuthModal } from './components/AuthModal';
 import { AdBanner } from './components/ads/AdBanner';
 import { InterstitialAdModal } from './components/ads/InterstitialAdModal';
 import { SubscriptionModal } from './components/SubscriptionModal';
+import { useTheme } from './contexts/ThemeContext';
 import { AdminPanel } from './components/AdminPanel';
 import { TermsModal } from './components/legal/TermsModal';
 import { PrivacyModal } from './components/legal/PrivacyModal';
@@ -668,15 +669,12 @@ export default function App() {
   const [color, setColor] = useState<string>('#1e3a8a');
   const [strokeWidth, setStrokeWidth] = useState<number>(3);
   const [baseCellSize, setBaseCellSize] = useState<number>(32);
-  const [theme, setTheme] = useState<ThemeType>(() => {
-    try {
-      const saved = localStorage.getItem('mathboard_theme_v2');
-      if (saved === 'notebook' || saved === 'blueprint' || saved === 'chalkboard' || saved === 'clean') {
-        return saved as ThemeType;
-      }
-    } catch {}
-    return 'notebook';
-  });
+  const { resolvedTheme, setTheme: setGlobalTheme, theme: globalTheme } = useTheme();
+  const [theme, setTheme] = useState<ThemeType>('notebook');
+  
+  useEffect(() => {
+    setTheme(resolvedTheme === 'dark' ? 'chalkboard' : 'notebook');
+  }, [resolvedTheme]);
   const [palmRejection, setPalmRejection] = useState<boolean>(false);
   const [eraserMode, setEraserMode] = useState<EraserMode>('stroke');
   const [snapToGrid, setSnapToGrid] = useState<boolean>(false);
@@ -1649,11 +1647,7 @@ export default function App() {
   };
 
   const handleToggleTheme = () => {
-    const nextTheme: ThemeType = theme === 'notebook' || theme === 'clean' ? 'blueprint' : 'notebook';
-    setTheme(nextTheme);
-    try {
-      localStorage.setItem('mathboard_theme_v2', nextTheme);
-    } catch {}
+    setGlobalTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
   };
 
   const handleImportPdfClick = () => {

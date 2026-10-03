@@ -40,12 +40,12 @@ export const THEME_CONFIGS: Record<
     defaultPen: '#1e3a8a', // classic blue pen ink
   },
   chalkboard: {
-    bg: '#25443a', // soft, pleasant school chalkboard green (not pitch dark)
-    gridPrimary: 'rgba(255, 255, 255, 0.09)',
-    gridSecondary: 'rgba(255, 255, 255, 0.16)',
-    marginLine: 'rgba(248, 113, 113, 0.35)',
+    bg: '#0f172a', // slate/chalkboard
+    gridPrimary: '#1e293b',
+    gridSecondary: '#334155',
+    marginLine: 'rgba(239, 68, 68, 0.35)',
     textColor: '#f8fafc',
-    defaultPen: '#ffffff', // white chalk
+    defaultPen: '#ffffff', // white/neon
   },
   blueprint: {
     bg: '#0f172a',
